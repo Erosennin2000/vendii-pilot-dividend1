@@ -10,8 +10,8 @@ export function AppBar() {
   const { session } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const links = [{ href: "/dashboard", label: "My claims" }, { href: "/forms", label: "Registrar forms" }];
-  if (session?.role === "ops") { links.push({ href: "/ops", label: "Ops console" }); links.push({ href: "/ops/pilot", label: "Pilot" }); }
+  const links = [{ href: "/dashboard", label: "My claims" }, { href: "/forms", label: "Registrar forms" }, { href: "/pilot", label: "Pilot" }];
+  if (session?.role === "ops") { links.push({ href: "/ops", label: "Ops console" }); links.push({ href: "/ops/pilot", label: "Pilot submissions" }); }
 
   return (
     <header className="appbar">

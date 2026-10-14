@@ -7,7 +7,10 @@ export default function Home() {
       <section className="hero">
         <div className="hero-top">
           <Logo height={32} onDark />
-          <Link className="signin" href="/sign-in?next=/dashboard">Sign in to track a claim</Link>
+          <span style={{ display: "flex", gap: 20, alignItems: "center" }}>
+            <Link className="signin" href="/pilot">Pilot: Coronation &amp; First</Link>
+            <Link className="signin" href="/sign-in?next=/dashboard">Sign in to track a claim</Link>
+          </span>
         </div>
         <div className="hero-grid">
           <div className="hero-main">
@@ -17,7 +20,8 @@ export default function Home() {
               Nigerian registrar, file the claim under your authority, and chase it until the money lands in your account.
             </p>
             <div className="hero-cta">
-              <Link className="btn gold lg" href="/claim/start/own">Check what you&apos;re owed</Link>
+              <Link className="btn gold lg" href="/pilot">Claim from Coronation or First Registrars</Link>
+              <Link className="btn ghost on-dark lg" href="/claim/start/own">Check what you&apos;re owed</Link>
               <Link className="btn ghost on-dark lg" href="/claim/start/estate">Claiming for someone who has died</Link>
             </div>
             <div className="hero-note">10% of what we recover. Nothing if we recover nothing.</div>
