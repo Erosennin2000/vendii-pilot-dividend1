@@ -6,22 +6,26 @@ The Vendii pilot. `/` is the pilot home page and **`/pilot`** is the four-step f
 | Step | What the person does | What we keep |
 | --- | --- | --- |
 | 1. You | Name, other spellings, email, CHN/CSCS. Presses Continue, then enters the **email code** (demo code **123456**). | A **lead** is saved the moment they continue, even if they never finish. |
-| 2. Your companies | Registrar dropdown, company dropdown, **+ Add company**, repeat. Coronation and First only. | |
-| 3. Your details | BVN, bank, account, address, mobile; address, phone and next of kin **at the time of purchase**. | |
+| 2. Your companies | Registrar dropdown, then a **tick-box list** of companies (search, Tick all) and **Add N companies** in one go. Coronation and First only. | |
+| 3. Your details | BVN, **bank (dropdown of Nigerian banks, fintechs and microfinance banks)**, **account number (exactly 10 digits)**, address, mobile; address, phone and next of kin **at the time of purchase**. | |
 | 4. Sign and send | Photo, signature, payment choice (10% after, or pay now at ₦200 a company), consent tick. | The full **submission**, with both PDFs per registrar. |
 
-On **Send my forms** the app then:
+On **Send my forms**, two things happen:
 
-1. fills each registrar's real e-dividend mandate form and ticks the companies;
-2. writes a one-page **Letter of Authority** with the shareholder's signature, naming the holdings, other spellings, and details at purchase;
-3. saves the record and the PDFs;
-4. emails **each registrar** one message with both PDFs attached;
-5. emails the **shareholder** a confirmation (no BVN, no attachments).
+1. **Instantly:** the app fills each registrar's real e-dividend mandate form, writes a one-page **Letter of Authority** (with the shareholder's signature, holdings, other spellings and details at purchase), saves the record and PDFs, and shows the reference. The record is in the admin page at once, marked **Queued**.
+2. **Right behind it** (a second call, a few seconds): the registrars' emails go out together, each with both PDFs, then the shareholder gets a confirmation (no BVN, no attachments). The status becomes **Sent**.
 
-Staff see everything at **`/ops/pilot`** (sign in as an ops user): a **Submissions** tab (what was sent, each email's status, the PDFs, resend,
-mark-as-paid, notes) and a **Leads** tab (email and CHN/CSCS of everyone who started, whether they confirmed their email, and whether they sent their forms), both with CSV export.
+If the tab is closed between the two, the submission stays **Queued** and shows a **Send now** button in the admin page.
 
-Everything pilot-specific lives in `lib/pilot/`, `app/pilot/`, `app/ops/pilot/`, `app/api/pilot/`. The look is Vendii brand v1.1 (logo, colours, self-hosted Space Grotesk, in `public/brand` and `public/fonts`).
+## Staff page: `/admin`
+
+Sign in with a Supabase Auth user whose email is in `PILOT_ADMIN_EMAILS`. The list refreshes every 10 seconds.
+- **Submissions:** who, what was sent to each registrar and how many companies, each email's status, search, CSV export, payment status, notes.
+- **Preview PDFs:** the exact mandate form and letter of authority that went to a registrar, with the company count and list, beside **Chase this registrar** (sends a follow-up email with both PDFs again and an optional line from you; every chase is logged).
+- **Send now / Send again / Retry send**, and **Mark as paid** for pay-ahead.
+- **Leads:** email and CHN/CSCS of everyone who started, whether they confirmed their email, whether they sent their forms.
+
+Everything pilot-specific lives in `lib/pilot/`, `components/CompanyPicker.tsx`, `app/pilot/`, `app/admin/`, `app/api/pilot/`, `supabase/pilot.sql`. The look is Vendii brand v1.1.
 
 ## The email check (step 1)
 
@@ -40,19 +44,10 @@ Everything pilot-specific lives in `lib/pilot/`, `app/pilot/`, `app/ops/pilot/`,
 
 The shareholder's confirmation always goes to the address they typed. Every record notes which mode it was sent in.
 
-## Set-up (about 15 minutes)
+## Set-up
 
-1. `npm install` (adds `nodemailer`).
-2. Copy the pilot block of `.env.example` into `.env.local` (and into Vercel's environment variables):
-   `PILOT_MODE`, `PILOT_OTP`, `PILOT_SECRET`, `PILOT_TEST_EMAIL`, `PILOT_ADMIN_EMAIL`, `PILOT_REPLY_TO`, `MAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
-   and the three `PILOT_PAY_*` lines for people who choose pay-ahead.
-3. **Mailbox.** `MAIL_FROM` is `Vendii <dami@dividendii.com>` (the group address; check the spelling matches your real domain). You need an SMTP login for that address (Zoho, Google Workspace, Brevo, Resend, Postmark...) and the
-   domain's SPF/DKIM records set up by that provider, or the mail will land in spam.
-4. **Database.** Nothing to create by hand. With `NEXT_PUBLIC_DATA_SOURCE=firebase`, submissions are written to a Firestore collection called
-   **`pilotSubmissions`** and **`pilotLeads`** (created on first use) and PDFs to Storage under **`pilot-submissions/<id>/`**. Deploy the updated rules so only ops can read the collection:
-   `npm run deploy:rules`. Make yourself ops if you haven't: `npm run set-role -- you@dividendi.ng ops`.
-5. Without Firebase (`NEXT_PUBLIC_DATA_SOURCE=mock`, local only), records live in server memory until restart and, with no `SMTP_HOST`, emails are logged to the terminal instead of sent. Good for a look around, not for the real test.
-6. `npm run dev`, open `/pilot`. Submit with your own details. The emails arrive at `PILOT_TEST_EMAIL`. Check `/ops/pilot`.
+Follow **[SETUP.md](SETUP.md)**: Supabase (database, PDF storage, staff login), SMTP email, Vercel settings, how to test, how to go live.
+Where the records go is chosen by `PILOT_STORE`: `supabase`, `firebase` or `memory`. With nothing set it uses Supabase when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` exist, else Firebase in firebase mode, else server memory (local only; with no `SMTP_HOST`, emails are printed to the terminal in development).
 
 ## Going live checklist
 
@@ -67,15 +62,16 @@ The shareholder's confirmation always goes to the address they typed. Every reco
 - Only companies printed on the Coronation and First forms are accepted; FBN Holdings is excluded. The server rechecks every name, not just the dropdown.
 - The shareholder must tick consent and the payment terms; the server refuses a submission without them and lists everything missing.
 - The record is saved **before** any email is sent. If an email fails, the record shows "Not sent" and the error, and **Retry send** resends from the stored PDFs.
+- An account number must be exactly 10 digits, checked in the form and again on the server. There is no bank-name lookup yet.
 - Public form protections: a hidden honeypot field and six submissions per hour per address (per server instance).
 - Names with marks (ọ, ẹ, ń) are simplified on the PDFs so the forms still render; the record keeps exactly what was typed.
 
 ## Payment options
 
 - **Direct debit after:** 10% of dividends actually received. Recorded as `debit_pending`; there is no live NIBSS mandate yet (same as the main app).
-- **Pay ahead:** ₦200 per company by bank transfer. Recorded as `awaiting_payment`; mark it paid in `/ops/pilot` when the transfer lands. Sending to the registrar does not wait for payment.
+- **Pay ahead:** ₦200 per company by bank transfer. Recorded as `awaiting_payment`; mark it paid in `/admin` when the transfer lands. Sending to the registrar does not wait for payment.
 - Note: First Registrars' own form says the activation service costs **₦150 per approved mandate per company**. That is a registrar charge on top of yours.
 
 ## Tests
 
-`npm test` includes `tests/pilot.test.ts` (validation, both modes, both PDFs attached, failed-send and resend, Yoruba names, rate limit).
+`npm test` includes `tests/pilot.test.ts` (validation, both modes, both PDFs attached, instant create then send, chase, failed-send and resend, Yoruba names, bank list and 10-digit rule, rate limit, the Supabase store and staff sign-in against a fake Supabase).

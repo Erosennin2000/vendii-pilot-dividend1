@@ -53,7 +53,7 @@ tests/                  Vitest
 
 Pages only ever call `repo.*` and `auth.*`. Nothing else in the UI knows which backend it's on.
 
-**Pilot.** A public Coronation and First Registrars flow that fills the forms and emails them for the shareholder lives at `/pilot`, with a staff view at `/ops/pilot`. See [PILOT.md](PILOT.md).
+**Pilot.** A public Coronation and First Registrars flow that fills the forms and emails them for the shareholder lives at `/pilot`, with a staff view at `/admin`. Setup: [SETUP.md](SETUP.md). How it works: [PILOT.md](PILOT.md).
 
 ## Rules the code enforces
 

@@ -64,7 +64,7 @@ export default function Landing() {
 
       <p className="foot-note tiny">
         You can claim directly from any registrar yourself at no cost. Vendii does the paperwork and the follow-up for you.{" "}
-        <Link href="/sign-in?next=/ops/pilot" className="link">Staff sign-in</Link>
+        <Link href="/admin" className="link">Staff sign-in</Link>
       </p>
     </>
   );

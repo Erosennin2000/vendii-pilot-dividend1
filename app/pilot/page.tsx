@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { CompanyPicker } from "@/components/CompanyPicker";
 import { Check, SelectField, TextField } from "@/components/Field";
 import { FileDrop } from "@/components/FileDrop";
 import { SignaturePad } from "@/components/SignaturePad";
 import { PhotoIcon, PlusIcon, XIcon } from "@/components/icons";
+import { BANK_GROUPS, OTHER_BANK, ALL_BANKS } from "@/lib/pilot/banks";
 import { naira } from "@/lib/domain/fees";
 import { emptyProfile } from "@/lib/forms/registry";
 import type { FormProfile } from "@/lib/forms/types";
@@ -16,7 +18,7 @@ import { errorMessage } from "@/lib/util";
 
 type Held = { registrarId: PilotRegistrarId; company: string };
 interface Result {
-  ref: string; sendStatus: "sent" | "partial" | "failed"; mode: "test" | "live";
+  id: string; ref: string; sendStatus: "queued" | "sending" | "sent" | "partial" | "failed"; mode: "test" | "live";
   registrars: string[]; companyCount: number; byHand: string[]; payment: { method: PaymentMethod; amountDue: number };
 }
 
@@ -41,7 +43,6 @@ export default function PilotPage() {
   const [token, setToken] = useState<string | null>(null);
   // Step 2
   const [regName, setRegName] = useState("");
-  const [company, setCompany] = useState("");
   const [held, setHeld] = useState<Held[]>([]);
   // Step 3
   const [at, setAt] = useState(emptyAt);
@@ -78,11 +79,12 @@ export default function PilotPage() {
     if (v && !variants.some((x) => x.toLowerCase() === v.toLowerCase())) setVariants([...variants, v]);
     setPending("");
   }
-  function addCompany() {
-    if (!regId || !company) return;
-    setHeld((h) => [...h, { registrarId: regId as PilotRegistrarId, company }]);
-    setCompany("");
+  function addCompanies(list: string[]) {
+    if (!regId) return;
+    setHeld((h) => [...h, ...list.filter((c) => !h.some((x) => x.registrarId === regId && x.company === c)).map((company) => ({ registrarId: regId as PilotRegistrarId, company }))]);
   }
+  const bankListed = ALL_BANKS.includes(profile.bankName);
+  const [bankOther, setBankOther] = useState(false);
 
   /** Step 1: save what they've told us, then ask for the code. */
   async function sendCode() {
@@ -106,8 +108,14 @@ export default function PilotPage() {
   async function submit() {
     setBusy(true); setError(null);
     try {
-      setResult(await post<Result>("/api/pilot/submit", { ...input, token, website }));
+      const r = await post<Result>("/api/pilot/submit", { ...input, token, website });
+      setResult(r); // the reference shows at once; the emails go out behind it
       window.scrollTo({ top: 0, behavior: "smooth" });
+      if (r.sendStatus === "queued") {
+        post<{ sendStatus: Result["sendStatus"] }>("/api/pilot/dispatch", { id: r.id, token })
+          .then((d) => setResult((cur) => (cur ? { ...cur, sendStatus: d.sendStatus } : cur)))
+          .catch(() => setResult((cur) => (cur ? { ...cur, sendStatus: "failed" } : cur)));
+      }
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
 
@@ -192,18 +200,15 @@ export default function PilotPage() {
       {step === 2 && (
         <section className="card">
           <h1>Where do you hold shares?</h1>
-          <p className="lede">The pilot covers Coronation Registrars and First Registrars. Pick a registrar, pick a company, then press Add. Repeat for each company you hold.</p>
-          <div className="field-row">
-            <SelectField label="Registrar" value={regName} onChange={(v) => { setRegName(v); setCompany(""); }} options={PILOT_REGISTRARS.map((r) => r.name)} placeholder="Choose a registrar" />
-            <SelectField label="Company" value={company} onChange={setCompany} options={options} placeholder={regId ? "Choose a company" : "Choose a registrar first"} />
-          </div>
-          <button type="button" className="btn" disabled={!regId || !company} onClick={addCompany}>+ Add company</button>
+          <p className="lede">The pilot covers Coronation Registrars and First Registrars. Pick a registrar, tick every company you hold, then press Add. You can do it for the other registrar afterwards.</p>
+          <SelectField label="Registrar" value={regName} onChange={(v) => { setRegName(v); }} options={PILOT_REGISTRARS.map((r) => r.name)} placeholder="Choose a registrar" />
+          <CompanyPicker key={regId} options={options} disabled={!regId} placeholder={regId ? "Tick your companies" : "Choose a registrar first"} onAdd={addCompanies} />
 
           {byRegistrar.length > 0 && (
             <div className="stack" style={{ marginTop: 20 }}>
               {byRegistrar.map(({ r, items }) => (
                 <div key={r.id}>
-                  <div className="tiny" style={{ fontWeight: 600 }}>{r.name}</div>
+                  <div className="tiny" style={{ fontWeight: 600 }}>{r.name} &middot; {items.length} {items.length === 1 ? "company" : "companies"}</div>
                   <div className="tags" style={{ marginTop: 6 }}>
                     {items.map((h) => (
                       <button key={h.company} type="button" className="chip" aria-label={`Remove ${h.company}`}
@@ -224,10 +229,21 @@ export default function PilotPage() {
         <section className="card">
           <h1>Your details</h1>
           <p className="lede">The registrar needs these to match you to the register and to pay you. Write them as your bank holds them.</p>
-          <div className="field-row three">
+          <div className="field-row">
             <TextField label="BVN" value={profile.bvn} onChange={digits("bvn", 11)} inputMode="numeric" placeholder="11 digits" />
-            <TextField label="Bank" value={profile.bankName} onChange={set("bankName")} placeholder="Guaranty Trust Bank" />
-            <TextField label="Account number" value={profile.accountNumber} onChange={digits("accountNumber", 10)} inputMode="numeric" placeholder="10 digits" />
+            <TextField label="Account number" value={profile.accountNumber} onChange={digits("accountNumber", 10)} inputMode="numeric" placeholder="10 digits"
+              hint={profile.accountNumber.length === 10 ? "Looks right." : `${profile.accountNumber.length} of 10 digits`}
+              error={profile.accountNumber.length > 0 && profile.accountNumber.length < 10 ? "An account number has exactly 10 digits." : undefined} />
+          </div>
+          <div className="field">
+            <label htmlFor="bank">Bank</label>
+            <select id="bank" className="input" value={bankOther ? OTHER_BANK : bankListed ? profile.bankName : ""}
+              onChange={(e) => { const v = e.target.value; if (v === OTHER_BANK) { setBankOther(true); set("bankName")(""); } else { setBankOther(false); set("bankName")(v); } }}>
+              <option value="">Choose your bank</option>
+              {BANK_GROUPS.map((g) => <optgroup key={g.group} label={g.group}>{g.banks.map((b) => <option key={b} value={b}>{b}</option>)}</optgroup>)}
+              <option value={OTHER_BANK}>{OTHER_BANK}</option>
+            </select>
+            {bankOther && <input className="input" style={{ marginTop: 8 }} placeholder="Type your bank's name" value={profile.bankName} onChange={(e) => set("bankName")(e.target.value)} />}
           </div>
           <TextField label="Home address now" value={profile.address} onChange={set("address")} placeholder="House number, street and area" autoComplete="street-address" />
           <div className="field-row three">
@@ -324,11 +340,13 @@ function Nav({ back, next, problems }: { back: () => void; next: () => void; pro
 
 function Done({ r, email, first }: { r: Result; email: string; first: string }) {
   const ok = r.sendStatus === "sent";
+  const pending = r.sendStatus === "queued" || r.sendStatus === "sending";
   return (
     <div className="pwrap">
       <section className="card">
-        <h1>{ok ? `Done, ${first}. Your forms are on their way.` : r.sendStatus === "partial" ? "Part of your submission went out" : "We saved your details, but the email didn't go yet"}</h1>
+        <h1>{pending ? `Got it, ${first}. Sending your forms now.` : ok ? `Done, ${first}. Your forms are on their way.` : r.sendStatus === "partial" ? "Part of your submission went out" : "We saved your details, but the email didn't go yet"}</h1>
         <p className="lede">
+          {pending && <>Your details are saved under reference <b>{r.ref}</b>. We&apos;re emailing your completed mandate form and signed letter of authority to {r.registrars.join(" and ")} now. This takes a few seconds.</>}
           {ok && <>We sent your completed mandate form and signed letter of authority to {r.registrars.join(" and ")}. A confirmation is on its way to <b>{email}</b>.</>}
           {r.sendStatus === "partial" && <>One registrar&apos;s email didn&apos;t go. Your details are saved, and we&apos;ll send the rest. You don&apos;t need to do anything.</>}
           {r.sendStatus === "failed" && <>Nothing has reached the registrar yet. Your details are saved with us and we&apos;ll send them. You don&apos;t need to fill this in again.</>}

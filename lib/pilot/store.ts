@@ -89,6 +89,42 @@ export async function firebaseStore(): Promise<PilotStore> {
   };
 }
 
+/**
+ * Supabase Postgres for the records (one jsonb document per submission, with the searchable bits as real columns),
+ * Supabase Storage for the PDFs. Tables and bucket are created by supabase/pilot.sql.
+ */
+export async function supabaseStore(): Promise<PilotStore> {
+  const { selectRows, upsertRow, uploadObject, downloadObject } = await import("./supabase");
+  const subRow = (s: PilotSubmission) => ({ id: s.id, ref: s.ref, created_at: s.createdAt, email: s.profile.email, send_status: s.sendStatus, mode: s.mode, data: plain(s) });
+  const leadRow = (l: PilotLead) => ({ id: l.id, email: l.email, updated_at: l.updatedAt, data: plain(l) });
+  const one = async (id: string) => (await selectRows<{ data: PilotSubmission }>("pilot_submissions", `select=data&id=eq.${encodeURIComponent(id)}&limit=1`))[0]?.data ?? null;
+  return {
+    async save(sub, files) {
+      for (const f of files) await uploadObject(f.path, f.bytes, f.contentType); // files first: a record must never point at a missing PDF
+      await upsertRow("pilot_submissions", subRow(sub));
+    },
+    async update(id, patch) {
+      const cur = await one(id);
+      if (!cur) throw new Error("Submission not found.");
+      await upsertRow("pilot_submissions", subRow({ ...cur, ...patch }));
+    },
+    get: one,
+    async list(limit = 500) {
+      return (await selectRows<{ data: PilotSubmission }>("pilot_submissions", `select=data&order=created_at.desc&limit=${limit}`)).map((r) => r.data);
+    },
+    readFile: (path) => downloadObject(path),
+    async saveLead(lead) { await upsertRow("pilot_leads", leadRow(lead)); },
+    async getLead(id) { return (await selectRows<{ data: PilotLead }>("pilot_leads", `select=data&id=eq.${encodeURIComponent(id)}&limit=1`))[0]?.data ?? null; },
+    async listLeads(limit = 1000) {
+      return (await selectRows<{ data: PilotLead }>("pilot_leads", `select=data&order=updated_at.desc&limit=${limit}`)).map((r) => r.data);
+    },
+  };
+}
+
+/** PILOT_STORE picks it: supabase, firebase or memory. With nothing set: Supabase if its keys are there, else Firebase in firebase mode, else memory. */
 export async function getPilotStore(): Promise<PilotStore> {
-  return DATA_SOURCE === "firebase" ? firebaseStore() : memoryStore();
+  const want = (process.env.PILOT_STORE ?? "").trim().toLowerCase();
+  if (want === "supabase" || (!want && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)) return supabaseStore();
+  if (want === "firebase" || (!want && DATA_SOURCE === "firebase")) return firebaseStore();
+  return memoryStore();
 }

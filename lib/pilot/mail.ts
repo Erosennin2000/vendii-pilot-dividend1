@@ -1,6 +1,5 @@
 import "server-only";
 import { naira } from "@/lib/domain/fees";
-import { DATA_SOURCE } from "@/lib/config";
 import { PILOT_BRAND, PAY_AHEAD_PER_COMPANY, pilotRegistrar } from "./config";
 import type { PilotSubmission } from "./types";
 
@@ -41,12 +40,12 @@ let override: Mailer | null = null;
 /** Tests hand in a fake mailer. */
 export const setMailerForTests = (m: Mailer | null) => { override = m; };
 
-/** SMTP through nodemailer. With no SMTP_HOST, local dev (mock mode) just logs the message; a real deployment fails loudly. */
+/** SMTP through nodemailer. With no SMTP_HOST, local dev just logs the message; a production deployment fails loudly. */
 export function getMailer(): Mailer {
   if (override) return override;
   const host = process.env.SMTP_HOST?.trim();
   if (!host) {
-    if (DATA_SOURCE === "mock") {
+    if (process.env.NODE_ENV !== "production") {
       return {
         async send(m) {
           console.log(`[pilot mail, not delivered: SMTP_HOST is not set] to=${m.to} subject="${m.subject}" attachments=${(m.attachments ?? []).map((a) => a.filename).join(", ")}`);
@@ -175,3 +174,30 @@ export function confirmationEmail(s: PilotSubmission): Pick<MailMessage, "subjec
 }
 
 export { paymentLines };
+
+
+/** A follow-up to a registrar about a submission already sent. Staff can add a line of their own. */
+export function chaseEmail(s: PilotSubmission, registrarId: string, extra = ""): Pick<MailMessage, "subject" | "text" | "html"> {
+  const reg = pilotRegistrar(registrarId)!;
+  const companies = s.holdings.filter((h) => h.registrarId === registrarId).map((h) => h.company);
+  const sentAt = [...s.emails].reverse().find((e) => e.kind === "registrar" && e.registrarId === registrarId && e.status === "sent")?.at ?? s.createdAt;
+  const day = new Date(sentAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
+  const name = fullName(s).toUpperCase();
+  const subject = `Follow-up: e-dividend mandate for ${s.profile.surname.toUpperCase()} ${s.profile.firstName} (${companies.length} ${companies.length === 1 ? "holding" : "holdings"}) [${s.ref}]`;
+  const note = extra.trim();
+  const text = [
+    `Dear ${reg.name},`, ``,
+    `We wrote on ${day} on behalf of ${name}, reference ${s.ref}, enclosing the e-dividend mandate form and a signed letter of authority. We have not yet had a reply, so we are following up. The documents are attached again.`,
+    ``, `Holdings (${companies.length}):`, ...companies.map((c, i) => `${i + 1}. ${c}`),
+    ...(note ? [``, note] : []),
+    ``, `Please confirm that the mandate has been received and updated, or tell us what else you need.`, ``, PILOT_BRAND,
+  ].join("\n");
+  const html = shell(
+    `<p>Dear ${esc(reg.name)},</p>` +
+    `<p>We wrote on ${esc(day)} on behalf of <b>${esc(name)}</b>, reference <b>${esc(s.ref)}</b>, enclosing the e-dividend mandate form and a signed letter of authority. We have not yet had a reply, so we are following up. The documents are attached again.</p>` +
+    `<p><b>Holdings (${companies.length})</b></p><ol>${companies.map((c) => `<li>${esc(c)}</li>`).join("")}</ol>` +
+    (note ? `<p>${esc(note)}</p>` : "") +
+    `<p>Please confirm that the mandate has been received and updated, or tell us what else you need.</p><p>${esc(PILOT_BRAND)}</p>`,
+  );
+  return { subject, text, html };
+}

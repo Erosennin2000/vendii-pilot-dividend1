@@ -11,7 +11,7 @@ export function AppBar() {
   const pathname = usePathname();
   const router = useRouter();
   // The old claim screens are hidden: nobody is linked to them. Staff get their two consoles.
-  const links = session?.role === "ops" ? [{ href: "/ops/pilot", label: "Pilot submissions" }, { href: "/ops", label: "Ops console" }] : [];
+  const links = session?.role === "ops" ? [{ href: "/admin", label: "Pilot submissions" }, { href: "/ops", label: "Ops console" }] : [];
 
   return (
     <header className="appbar">

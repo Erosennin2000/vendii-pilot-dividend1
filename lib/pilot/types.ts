@@ -28,7 +28,7 @@ export interface PilotInput {
 export type EmailStatus = "sent" | "failed";
 
 export interface EmailRecord {
-  kind: "registrar" | "confirmation";
+  kind: "registrar" | "confirmation" | "chase";
   registrarId?: PilotRegistrarId;
   /** Where it was actually delivered. */
   to: string;
@@ -50,7 +50,8 @@ export interface StoredFile {
   filename: string;
 }
 
-export type SendStatus = "sent" | "partial" | "failed";
+/** "queued": saved, emails not sent yet. "sending": being sent right now. */
+export type SendStatus = "queued" | "sending" | "sent" | "partial" | "failed";
 export type PaymentStatus = "debit_pending" | "awaiting_payment" | "paid";
 
 export interface PilotSubmission {

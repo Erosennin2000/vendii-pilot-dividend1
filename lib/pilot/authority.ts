@@ -83,7 +83,7 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
 
   text(`I, ${full}, appoint ${PILOT_BRAND} ("the Attorney") to act for me for the limited purposes below.`, { gap: 8 });
 
-  heading("1. Holdings covered");
+  heading(`1. Holdings covered (${a.companies.length} ${a.companies.length === 1 ? "company" : "companies"})`);
   text(`This authority covers my holdings in the following ${a.companies.length === 1 ? "company" : "companies"} on your register, and nothing else:`, { gap: 2 });
   a.companies.forEach((c, i) => text(`${i + 1}. ${c}`, { indent: 12, gap: 0 }));
   y -= 6;
