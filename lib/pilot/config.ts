@@ -4,7 +4,7 @@
  */
 import { DIRECTORY } from "@/lib/forms/registry";
 
-export const PILOT_BRAND = "Dividendi";
+export const PILOT_BRAND = "Vendii";
 
 /** Registrars in the pilot, with the address their mandate form says to send to. */
 export const PILOT_REGISTRARS = [

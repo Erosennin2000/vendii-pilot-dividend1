@@ -13,29 +13,36 @@ export class PilotValidationError extends Error {
 
 const PROFILE_KEYS: (keyof FormProfile)[] = ["surname", "firstName", "otherNames", "bvn", "bankName", "accountNumber", "address", "city", "state", "country", "previousAddress", "chn", "phone1", "phone2", "email"];
 
-/** Plain-language list of what is still missing or wrong. Used by the form (to explain a disabled button) and by the server. */
-export function pilotProblems(i: PilotInput): string[] {
-  const p: string[] = [];
+export type PilotStep = 1 | 2 | 3 | 4;
+
+/** What is still missing or wrong, grouped by the four steps of the form. Plain language, so the form can show it as is. */
+export function pilotProblemsByStep(i: PilotInput): Record<PilotStep, string[]> {
   const has = (s: string) => !!s?.trim();
-  if (!i.holdings.length) p.push("add at least one company");
-  if (i.holdings.length > MAX_COMPANIES) p.push(`add no more than ${MAX_COMPANIES} companies`);
-  if (!has(i.profile.surname)) p.push("your surname");
-  if (!has(i.profile.firstName)) p.push("your first name");
-  if (!isElevenDigits(i.profile.bvn)) p.push("your 11-digit BVN");
-  if (!has(i.profile.bankName)) p.push("your bank");
-  if (!isNuban(i.profile.accountNumber)) p.push("your 10-digit account number");
-  if (!has(i.profile.address)) p.push("your current address");
-  if (!has(i.profile.city) || !has(i.profile.state)) p.push("your city and state");
-  if (!normalizeNgPhone(i.profile.phone1)) p.push("a Nigerian mobile number");
-  if (!isEmail(i.profile.email)) p.push("a valid email address");
-  if (!has(i.atPurchase.address)) p.push("your address when you bought the shares");
-  if (!has(i.atPurchase.nextOfKinName)) p.push("your next of kin when you bought the shares");
-  if (!i.photo) p.push("a passport photo");
-  if (!i.signature) p.push("your signature");
-  if (!i.payment.method) p.push("how you'd like to pay");
-  else if (!i.payment.acknowledged) p.push("a tick to confirm the payment terms");
-  if (!i.consent) p.push("a tick to authorise us to send your forms");
+  const p: Record<PilotStep, string[]> = { 1: [], 2: [], 3: [], 4: [] };
+  if (!has(i.profile.firstName)) p[1].push("your first name");
+  if (!has(i.profile.surname)) p[1].push("your surname");
+  if (!isEmail(i.profile.email)) p[1].push("a valid email address");
+  if (!i.holdings.length) p[2].push("at least one company");
+  if (i.holdings.length > MAX_COMPANIES) p[2].push(`no more than ${MAX_COMPANIES} companies`);
+  if (!isElevenDigits(i.profile.bvn)) p[3].push("your 11-digit BVN");
+  if (!has(i.profile.bankName)) p[3].push("your bank");
+  if (!isNuban(i.profile.accountNumber)) p[3].push("your 10-digit account number");
+  if (!has(i.profile.address)) p[3].push("your current address");
+  if (!has(i.profile.city) || !has(i.profile.state)) p[3].push("your city and state");
+  if (!normalizeNgPhone(i.profile.phone1)) p[3].push("a Nigerian mobile number");
+  if (!has(i.atPurchase.address)) p[3].push("your address when you bought the shares");
+  if (!has(i.atPurchase.nextOfKinName)) p[3].push("your next of kin when you bought the shares");
+  if (!i.photo) p[4].push("a passport photo");
+  if (!i.signature) p[4].push("your signature");
+  if (!i.payment.acknowledged) p[4].push("a tick to confirm how you'll pay");
+  if (!i.consent) p[4].push("a tick to let us send your forms");
   return p;
+}
+
+/** Everything missing, in step order. The server uses this as its final check. */
+export function pilotProblems(i: PilotInput): string[] {
+  const by = pilotProblemsByStep(i);
+  return [...by[1], ...by[2], ...by[3], ...by[4]];
 }
 
 /** Server side: take untrusted JSON, return a clean PilotInput or throw with every problem listed. */
@@ -62,6 +69,7 @@ export function parsePilotInput(raw: unknown): PilotInput {
   // The registrar forms have one "previous address" box. The address at purchase is what the register holds.
   profile.previousAddress = atPurchase.address;
 
+  const variants = (Array.isArray(b.variants) ? b.variants : []).map((v: unknown) => clean(v, 120)).filter(Boolean).slice(0, 10);
   const holdings: PilotInput["holdings"] = [];
   const problems: string[] = [];
   for (const h of Array.isArray(b.holdings) ? b.holdings.slice(0, MAX_COMPANIES + 1) : []) {
@@ -79,7 +87,7 @@ export function parsePilotInput(raw: unknown): PilotInput {
   const dataUrl = (v: unknown, max: number) => (typeof v === "string" && /^data:image\/(png|jpe?g);base64,/.test(v) && v.length < max ? v : null);
 
   const input: PilotInput = {
-    profile, atPurchase, holdings,
+    profile, atPurchase, variants, holdings,
     photo: dataUrl(b.photo, 8_000_000),
     signature: dataUrl(b.signature, 3_000_000),
     payment: { method: (method ?? "debit_after") as PilotInput["payment"]["method"], acknowledged: pay.acknowledged === true },

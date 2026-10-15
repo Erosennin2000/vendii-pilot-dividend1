@@ -13,6 +13,8 @@ export interface Deps {
   store: PilotStore;
   mailer: Mailer;
   now?: () => Date;
+  /** The verified lead this submission belongs to. Set by the route after it checks the token. */
+  leadId?: string;
 }
 
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
@@ -106,7 +108,7 @@ export async function submitPilot(input: PilotInput, deps: Deps): Promise<PilotS
     const reg = pilotRegistrar(rid)!;
     const companies = input.holdings.filter((h) => h.registrarId === rid).map((h) => h.company);
     const { pdf, forms: filled } = await fillForms(profile, companies.map((company) => ({ registrarId: rid, company })), { photo, signature });
-    const authority = await buildAuthorityLetter({ registrar: reg.name, ref, profile, atPurchase: at, companies, signature, replyTo: env.replyTo, now });
+    const authority = await buildAuthorityLetter({ registrar: reg.name, ref, profile, atPurchase: at, variants: input.variants.map(pdfSafe), companies, signature, replyTo: env.replyTo, now });
     const mandateName = `Mandate-${reg.name.split(" ")[0]}-${ref}.pdf`;
     const authorityName = `Letter-of-authority-${reg.name.split(" ")[0]}-${ref}.pdf`;
     for (const [kind, filename, bytes] of [["mandate", mandateName, pdf], ["authority", authorityName, authority]] as const) {
@@ -120,8 +122,8 @@ export async function submitPilot(input: PilotInput, deps: Deps): Promise<PilotS
 
   const n = input.holdings.length;
   const sub: PilotSubmission = {
-    id, ref, createdAt: now.toISOString(), mode: env.mode,
-    profile: input.profile, atPurchase: input.atPurchase, // the originals, exactly as typed
+    id, ref, createdAt: now.toISOString(), mode: env.mode, leadId: deps.leadId ?? "",
+    profile: input.profile, atPurchase: input.atPurchase, variants: input.variants, // the originals, exactly as typed
     holdings: input.holdings.map((h) => ({ ...h, registrar: pilotRegistrar(h.registrarId)!.name })),
     forms,
     payment: input.payment.method === "pay_ahead"
@@ -131,6 +133,10 @@ export async function submitPilot(input: PilotInput, deps: Deps): Promise<PilotS
     files, emails: [], sendStatus: "failed", note: "",
   };
   await deps.store.save(sub, blobs);
+  if (deps.leadId) {
+    const lead = await deps.store.getLead(deps.leadId);
+    if (lead) await deps.store.saveLead({ ...lead, submittedRef: ref, updatedAt: now.toISOString() });
+  }
 
   // Registrar emails read their PDFs back from the store: the same path a later "resend" takes.
   for (const rid of registrarIds) sub.emails.push(await sendToRegistrar(sub, rid, deps));

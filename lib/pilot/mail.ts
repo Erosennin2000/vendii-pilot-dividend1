@@ -24,7 +24,7 @@ export function pilotEnv() {
   const admin = (e.PILOT_ADMIN_EMAIL ?? "").trim();
   return {
     mode,
-    from: e.MAIL_FROM?.trim() || `${PILOT_BRAND} <dummy@dividendi.com>`,
+    from: e.MAIL_FROM?.trim() || `${PILOT_BRAND} <dami@dividendii.com>`,
     admin,
     /** In test mode every registrar email lands here instead. */
     testInbox: (e.PILOT_TEST_EMAIL ?? admin).trim(),
@@ -103,6 +103,7 @@ export function registrarEmail(s: PilotSubmission, registrarId: string): Pick<Ma
     ``,
     `Holdings:`,
     ...companies.map((c, i) => `${i + 1}. ${c}`),
+    ...((s.variants ?? []).length ? [``, `The name may appear on your register as: ${(s.variants ?? []).join("; ")}.`] : []),
     ...(byHand.length ? [``, `Not printed on your form, please note by hand: ${byHand.join("; ")}.`] : []),
     ``,
     `Details when the shares were bought, to help you find the holding:`,
@@ -122,6 +123,7 @@ export function registrarEmail(s: PilotSubmission, registrarId: string): Pick<Ma
     `<p><b>Attached</b></p><ol><li>The completed e-dividend mandate form, with passport photograph and signature.</li>` +
     `<li>A letter of authority signed by the shareholder, authorising ${esc(PILOT_BRAND)} to submit the mandate and correspond with you for these holdings only. Payment is to go directly to the shareholder's bank account.</li></ol>` +
     `<p><b>Holdings</b></p><ol>${companies.map((c) => `<li>${esc(c)}</li>`).join("")}</ol>` +
+    ((s.variants ?? []).length ? `<p><b>The name may appear on your register as:</b> ${esc((s.variants ?? []).join("; "))}.</p>` : "") +
     (byHand.length ? `<p><b>Not printed on your form, please note by hand:</b> ${esc(byHand.join("; "))}.</p>` : "") +
     `<p><b>Details when the shares were bought</b>, to help you find the holding:<br>Address: ${esc(a.address)}<br>` +
     (a.phone ? `Phone: ${esc(a.phone)}<br>` : "") + `Next of kin: ${esc(kin)}</p>` +

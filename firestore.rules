@@ -36,6 +36,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Leads hold emails and CHN/CSCS numbers from people who started the pilot.
+    match /pilotLeads/{id} {
+      allow read: if isOps();
+      allow write: if false;
+    }
+
     match /outboundMessages/{id} {
       allow read: if isOps();
       allow write: if false;

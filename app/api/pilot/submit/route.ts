@@ -3,6 +3,7 @@ import { getMailer } from "@/lib/pilot/mail";
 import { tooMany } from "@/lib/pilot/rateLimit";
 import { getPilotStore } from "@/lib/pilot/store";
 import { submitPilot } from "@/lib/pilot/submit";
+import { verifyToken } from "@/lib/pilot/token";
 import { PilotValidationError, parsePilotInput } from "@/lib/pilot/validate";
 
 export const runtime = "nodejs";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Public. No sign-in in the pilot. Validates, fills the forms, saves the record, emails the registrars
+ * Public, but needs the token from the email check. Validates, fills the forms, saves the record, emails the registrars
  * and the shareholder. Replies with the reference and how it went, never with the shareholder's details.
  */
 export async function POST(req: Request) {
@@ -22,8 +23,11 @@ export async function POST(req: Request) {
     // The hidden "website" box is for bots. Pretend it worked and do nothing.
     if (raw && typeof raw.website === "string" && raw.website.trim()) return NextResponse.json({ ref: "DVD-000000", sendStatus: "sent", payment: { method: "debit_after", amountDue: 0 } });
 
-    const input = parsePilotInput(raw);
-    const sub = await submitPilot(input, { store: await getPilotStore(), mailer: getMailer() });
+    // Step 1's email check must have passed. The token says which lead, and the email on the forms is theirs.
+    const who = verifyToken(raw?.token);
+    if (!who) return NextResponse.json({ error: "Please confirm your email again to continue." }, { status: 401 });
+    const input = parsePilotInput({ ...raw, profile: { ...(raw?.profile ?? {}), email: who.email } });
+    const sub = await submitPilot(input, { store: await getPilotStore(), mailer: getMailer(), leadId: who.leadId });
     return NextResponse.json({
       ref: sub.ref,
       sendStatus: sub.sendStatus,

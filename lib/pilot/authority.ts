@@ -11,6 +11,7 @@ export interface AuthorityInput {
   ref: string;
   profile: FormProfile;
   atPurchase: PilotInput["atPurchase"];
+  variants?: string[];
   companies: string[];
   signature: Uint8Array | null;
   /** Where the registrar should reply. */
@@ -40,8 +41,8 @@ function wrap(font: PDFFont, text: string, size: number, width: number): string[
 const lagosDate = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
 
 /**
- * A one-or-two page letter that sits next to the mandate form. It tells the registrar who Dividendi is acting
- * for, on which holdings, and what Dividendi may not do. The shareholder's drawn signature is on it.
+ * A one-or-two page letter that sits next to the mandate form. It tells the registrar who Vendii is acting
+ * for, on which holdings, and what Vendii may not do. The shareholder's drawn signature is on it.
  */
 export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
@@ -73,7 +74,7 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   page.drawText(PILOT_BRAND.toUpperCase(), { x: M, y, size: 11, font: bold, color: NAVY });
   y -= 24;
   text("LETTER OF AUTHORITY", { font: bold, size: 16, gap: 0 });
-  text("Limited power of attorney for an e-dividend mandate", { size: 11, color: MUTED, gap: 14 });
+  text("My signed permission for Vendii to submit my e-dividend mandate", { size: 11, color: MUTED, gap: 14 });
 
   text(`Date: ${lagosDate(a.now ?? new Date())}  |  Reference: ${a.ref}`, { gap: 8 });
   text(`To: The Registrar, ${a.registrar}`, { gap: 8 });
@@ -86,6 +87,8 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   text(`This authority covers my holdings in the following ${a.companies.length === 1 ? "company" : "companies"} on your register, and nothing else:`, { gap: 2 });
   a.companies.forEach((c, i) => text(`${i + 1}. ${c}`, { indent: 12, gap: 0 }));
   y -= 6;
+
+  if (a.variants?.length) text(`My name may appear on your register as: ${a.variants.join("; ")}.`, { gap: 2 });
 
   heading("2. What the Attorney may do");
   text("Complete and submit my e-dividend mandate form for these holdings, send you the supporting documents I have supplied, correspond with you about them, and ask you for the status of any unclaimed dividends held for me.");

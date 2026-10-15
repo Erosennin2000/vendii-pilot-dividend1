@@ -14,6 +14,8 @@ export interface PilotInput {
     nextOfKinRelationship: string;
     nextOfKinPhone: string;
   };
+  /** Other ways the name was written on the register. */
+  variants: string[];
   holdings: { registrarId: PilotRegistrarId; company: string }[];
   photo: string | null;
   signature: string | null;
@@ -56,8 +58,11 @@ export interface PilotSubmission {
   ref: string;
   createdAt: string;
   mode: "test" | "live";
+  /** The verified lead this submission came from. */
+  leadId: string;
   profile: FormProfile;
   atPurchase: PilotInput["atPurchase"];
+  variants: string[];
   holdings: { registrarId: PilotRegistrarId; registrar: string; company: string }[];
   /** Per registrar: what got ticked on the form and what the registrar must add by hand. */
   forms: { registrarId: PilotRegistrarId; registrar: string; ticked: string[]; unlisted: string[]; warnings: string[] }[];
@@ -71,3 +76,30 @@ export interface PilotSubmission {
 
 /** The list view leaves out the heavy parts. */
 export type PilotSummary = Omit<PilotSubmission, "files">;
+
+/**
+ * Saved the moment someone finishes step 1, before they have done anything else, so you can follow up with
+ * people who start and stop. One per email address.
+ */
+export interface PilotLead {
+  id: string;
+  email: string;
+  firstName: string;
+  surname: string;
+  otherNames: string;
+  variants: string[];
+  /** CHN or CSCS number, as typed. May be empty. */
+  chn: string;
+  createdAt: string;
+  updatedAt: string;
+  verifiedAt: string | null;
+  /** SHA-256 of the current code. Never shown to staff. */
+  codeHash: string | null;
+  codeExpires: string | null;
+  attempts: number;
+  /** Reference of the latest submission, once they have sent their forms. */
+  submittedRef: string | null;
+}
+
+/** What staff see: the lead without its code. */
+export type PilotLeadView = Omit<PilotLead, "codeHash" | "codeExpires" | "attempts">;

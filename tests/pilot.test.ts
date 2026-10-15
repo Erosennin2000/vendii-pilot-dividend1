@@ -4,7 +4,9 @@ import { PDFDocument } from "pdf-lib";
 import { PILOT_COMPANIES, companiesFor, payAheadTotal } from "@/lib/pilot/config";
 import type { MailMessage, Mailer } from "@/lib/pilot/mail";
 import { resetRateLimit, tooMany } from "@/lib/pilot/rateLimit";
+import { DEMO_CODE, leadIdFor, parseStart, startLead, verifyLead } from "@/lib/pilot/leads";
 import { memoryStore } from "@/lib/pilot/store";
+import { signToken, verifyToken } from "@/lib/pilot/token";
 import { resendPilot, submitPilot } from "@/lib/pilot/submit";
 import { pdfSafe } from "@/lib/pilot/text";
 import { PilotValidationError, parsePilotInput, pilotProblems } from "@/lib/pilot/validate";
@@ -19,6 +21,7 @@ const raw = (over: Record<string, unknown> = {}) => ({
     previousAddress: "", chn: "", phone1: "08031234567", phone2: "", email: "Adewale@Example.com",
   },
   atPurchase: { address: "22 Awolowo Road, Ikoyi", phone: "08099990000", nextOfKinName: "Funke Ogunyemi", nextOfKinRelationship: "Spouse", nextOfKinPhone: "" },
+  variants: ["A. B. Ogunyemi", "Wale Ogunyemi"],
   holdings: [
     { registrarId: "coronation", company: "MTN Nigeria Communication PLC" },
     { registrarId: "coronation", company: "Dangote Cement PLC" },
@@ -41,7 +44,7 @@ class FakeMailer implements Mailer {
 }
 
 beforeEach(() => {
-  Object.assign(process.env, { PILOT_MODE: "test", PILOT_TEST_EMAIL: "tester@example.com", PILOT_ADMIN_EMAIL: "admin@example.com", MAIL_FROM: "Dividendi <dummy@dividendi.com>" });
+  Object.assign(process.env, { PILOT_MODE: "test", PILOT_TEST_EMAIL: "tester@example.com", PILOT_ADMIN_EMAIL: "admin@example.com", MAIL_FROM: "Vendii <dami@dividendii.com>" });
   resetRateLimit();
 });
 
@@ -61,13 +64,14 @@ describe("validation", () => {
     expect(i.profile.phone1).toBe("+2348031234567");
     expect(i.profile.previousAddress).toBe("22 Awolowo Road, Ikoyi"); // the form's "previous address" box carries the address at purchase
     expect(i.holdings.length).toBe(3);
+    expect(i.variants).toEqual(["A. B. Ogunyemi", "Wale Ogunyemi"]);
   });
 
   it("lists everything that's missing", () => {
     const i = parsePilotInput(raw());
-    expect(pilotProblems({ ...i, consent: false, signature: null })).toEqual(["your signature", "a tick to authorise us to send your forms"]);
+    expect(pilotProblems({ ...i, consent: false, signature: null })).toEqual(["your signature", "a tick to let us send your forms"]);
     expect(() => parsePilotInput(raw({ consent: false }))).toThrow(PilotValidationError);
-    expect(() => parsePilotInput(raw({ payment: { method: "pay_ahead", acknowledged: false } }))).toThrow(/payment terms/);
+    expect(() => parsePilotInput(raw({ payment: { method: "pay_ahead", acknowledged: false } }))).toThrow(/how you'll pay/);
     expect(() => parsePilotInput(raw({ atPurchase: { address: "", phone: "", nextOfKinName: "", nextOfKinRelationship: "", nextOfKinPhone: "" } }))).toThrow(/next of kin/);
   });
 
@@ -106,6 +110,8 @@ describe("submitPilot", () => {
       expect(m.text).toContain("TEST MODE");
       expect(m.text).toContain("22 Awolowo Road"); // address at purchase
       expect(m.text).toContain("Funke Ogunyemi"); // next of kin
+      expect(m.text).toContain("Wale Ogunyemi"); // other spellings
+      expect(m.from).toBe("Vendii <dami@dividendii.com>");
       expect(m.attachments!.map((a) => a.filename.split("-")[0])).toEqual(["Mandate", "Letter"]);
       for (const a of m.attachments!) expect((await PDFDocument.load(a.content)).getPageCount()).toBeGreaterThan(0);
     }
@@ -171,4 +177,73 @@ describe("rate limit", () => {
     expect(tooMany("1.2.3.4")).toBe(true);
     expect(tooMany("5.6.7.8")).toBe(false);
   });
+});
+
+describe("step 1: lead and email check", () => {
+  const start = { firstName: "Adewale", surname: "Ogunyemi", otherNames: "", variants: ["A. B. Ogunyemi"], email: "Adewale@Example.com", chn: "c001 234" };
+
+  it("saves the lead at once, with email and CHN, before any code is entered", async () => {
+    const store = memoryStore();
+    const { leadId, demo } = await startLead(parseStart(start), { store, mailer: new FakeMailer() });
+    expect(demo).toBe(true);
+    expect(leadId).toBe(leadIdFor("adewale@example.com"));
+    const lead = await store.getLead(leadId);
+    expect(lead).toMatchObject({ email: "adewale@example.com", chn: "C001234", verifiedAt: null, submittedRef: null });
+    expect(lead?.variants).toEqual(["A. B. Ogunyemi"]);
+  });
+
+  it("demo mode: code 123456 works, sends no email, and returns a token that names the lead", async () => {
+    const store = memoryStore(), mailer = new FakeMailer();
+    const { leadId } = await startLead(parseStart(start), { store, mailer });
+    expect(mailer.sent.length).toBe(0);
+    const { token } = await verifyLead(leadId, DEMO_CODE, { store });
+    expect(verifyToken(token)).toEqual({ leadId, email: "adewale@example.com" });
+    expect((await store.getLead(leadId))?.verifiedAt).toBeTruthy();
+  });
+
+  it("email mode: emails a random 6-digit code from the Vendii address", async () => {
+    process.env.PILOT_OTP = "email";
+    try {
+      const store = memoryStore(), mailer = new FakeMailer();
+      const { leadId, demo } = await startLead(parseStart(start), { store, mailer });
+      expect(demo).toBe(false);
+      const code = /code is (\d{6})/.exec(mailer.sent[0].text)![1];
+      expect(mailer.sent[0].to).toBe("adewale@example.com");
+      await expect(verifyLead(leadId, code === "000000" ? "111111" : "000000", { store })).rejects.toThrow(/right code/);
+      await verifyLead(leadId, code, { store });
+    } finally { delete process.env.PILOT_OTP; }
+  });
+
+  it("locks after five wrong codes and rejects expired ones", async () => {
+    const store = memoryStore();
+    const { leadId } = await startLead(parseStart(start), { store, mailer: new FakeMailer() });
+    for (let i = 0; i < 5; i++) await expect(verifyLead(leadId, "999999", { store })).rejects.toThrow(/right code/);
+    await expect(verifyLead(leadId, DEMO_CODE, { store })).rejects.toThrow(/Too many/);
+    const again = await startLead(parseStart(start), { store, mailer: new FakeMailer() });
+    await expect(verifyLead(again.leadId, DEMO_CODE, { store, now: () => new Date(Date.now() + 20 * 60_000) })).rejects.toThrow(/expired/);
+  });
+
+  it("tokens can't be forged, altered or reused after they expire", () => {
+    const t = signToken("lead1", "a@b.co");
+    expect(verifyToken(t)).toEqual({ leadId: "lead1", email: "a@b.co" });
+    const [payload, sig] = t.split(".");
+    const forged = Buffer.from(JSON.stringify({ l: "lead2", e: "x@y.co", x: Date.now() + 1e9 })).toString("base64url");
+    expect(verifyToken(`${forged}.${sig}`)).toBe(null);
+    expect(verifyToken(`${payload}.AAAA`)).toBe(null);
+    expect(verifyToken(t, Date.now() + 4 * 60 * 60_000)).toBe(null);
+    expect(verifyToken("nope")).toBe(null);
+  });
+
+  it("refuses a start with no name or a bad email", () => {
+    expect(() => parseStart({ ...start, email: "nope" })).toThrow(/valid email/);
+    expect(() => parseStart({ ...start, firstName: "" })).toThrow(/first name/);
+  });
+
+  it("a submission marks its lead as sent", async () => {
+    const store = memoryStore(), mailer = new FakeMailer();
+    const { leadId } = await startLead(parseStart(start), { store, mailer });
+    const sub = await submitPilot(parsePilotInput(raw()), { store, mailer, leadId });
+    expect(sub.leadId).toBe(leadId);
+    expect((await store.getLead(leadId))?.submittedRef).toBe(sub.ref);
+  }, 60_000);
 });

@@ -10,17 +10,16 @@ export function AppBar() {
   const { session } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const links = [{ href: "/dashboard", label: "My claims" }, { href: "/forms", label: "Registrar forms" }, { href: "/pilot", label: "Pilot" }];
-  if (session?.role === "ops") { links.push({ href: "/ops", label: "Ops console" }); links.push({ href: "/ops/pilot", label: "Pilot submissions" }); }
+  // The old claim screens are hidden: nobody is linked to them. Staff get their two consoles.
+  const links = session?.role === "ops" ? [{ href: "/ops/pilot", label: "Pilot submissions" }, { href: "/ops", label: "Ops console" }] : [];
 
   return (
     <header className="appbar">
-      <Link href="/" aria-label="Dividendi home"><Logo height={22} /></Link>
+      <Link href="/" aria-label="Vendii home"><Logo height={24} /></Link>
       <nav>
         {links.map((l) => (
-          <Link key={l.href} href={l.href} className="navlink" data-on={pathname.startsWith(l.href)}>{l.label}</Link>
+          <Link key={l.href} href={l.href} className="navlink" data-on={l.href === "/ops" ? pathname === "/ops" : pathname.startsWith(l.href)}>{l.label}</Link>
         ))}
-        <Link href="/claim/start/own" className="navlink">Start a claim</Link>
       </nav>
       <span className="spacer" />
       {session && (

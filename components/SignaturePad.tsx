@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Ink is always dark navy on a light pad, whatever the page theme, because this goes on a legal document. */
-const INK = "#14263B";
+const INK = "#17375A";
 
 export function SignaturePad({ value, onChange }: { value: string | null; onChange: (dataUrl: string | null) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

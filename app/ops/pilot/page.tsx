@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { naira } from "@/lib/domain/fees";
-import { actOnSubmission, downloadFile, listSubmissions, submissionsCsv } from "@/lib/pilot/client";
+import { actOnSubmission, downloadFile, leadsCsv, listLeads, listSubmissions, submissionsCsv } from "@/lib/pilot/client";
 import { PILOT_REGISTRARS } from "@/lib/pilot/config";
-import type { PilotSubmission } from "@/lib/pilot/types";
+import type { PilotLeadView, PilotSubmission } from "@/lib/pilot/types";
 import { saveBlob } from "@/lib/forms/client";
 import { errorMessage } from "@/lib/util";
 
@@ -14,19 +14,26 @@ const label: Record<string, string> = { sent: "Sent", partial: "Part sent", fail
 
 export default function PilotAdmin() {
   const [subs, setSubs] = useState<PilotSubmission[] | null>(null);
+  const [leads, setLeads] = useState<PilotLeadView[]>([]);
+  const [tab, setTab] = useState<"subs" | "leads">("subs");
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
-  const load = () => listSubmissions().then(setSubs).catch((e) => setError(errorMessage(e)));
+  const load = () => Promise.all([listSubmissions(), listLeads()]).then(([s, l]) => { setSubs(s); setLeads(l); }).catch((e) => setError(errorMessage(e)));
   useEffect(() => { void load(); }, []);
 
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase();
     return (subs ?? []).filter((s) => !t || [s.ref, s.profile.firstName, s.profile.surname, s.profile.email, s.profile.phone1, ...s.holdings.map((h) => h.company)].join(" ").toLowerCase().includes(t));
   }, [subs, q]);
+
+  const shownLeads = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    return leads.filter((l) => !t || [l.email, l.firstName, l.surname, l.chn, l.submittedRef ?? ""].join(" ").toLowerCase().includes(t));
+  }, [leads, q]);
 
   async function run(id: string, body: Parameters<typeof actOnSubmission>[1], key: string) {
     setBusy(key); setError(null);
@@ -50,12 +57,15 @@ export default function PilotAdmin() {
       <div className="page-head">
         <div>
           <h1>Pilot submissions</h1>
-          <p>Everyone who has used the Coronation and First pilot form. Open one to see what was sent, resend a failed email, or mark a pay-ahead as received.</p>
+          <p>Everyone who has started or finished the Coronation and First pilot. Leads are people who began step 1, finished or not. Open a submission to see what was sent, resend a failed email, or mark a payment as received.</p>
         </div>
-        <button className="btn ghost sm" onClick={() => saveBlob(new Blob([submissionsCsv(shown)], { type: "text/csv" }), "pilot-submissions.csv")}>Export CSV</button>
+        <button className="btn ghost sm" onClick={() => tab === "leads"
+          ? saveBlob(new Blob([leadsCsv(shownLeads)], { type: "text/csv" }), "vendii-pilot-leads.csv")
+          : saveBlob(new Blob([submissionsCsv(shown)], { type: "text/csv" }), "vendii-pilot-submissions.csv")}>Export CSV</button>
       </div>
 
       <div className="stats" style={{ marginBottom: 20 }}>
+        <div className="stat-card"><div className="k">{leads.length}</div><div className="v">Started (leads)</div></div>
         <div className="stat-card"><div className="k">{all.length}</div><div className="v">Submissions</div></div>
         <div className="stat-card"><div className="k">{count((s) => s.sendStatus === "sent")}</div><div className="v">Fully sent</div></div>
         <div className="stat-card"><div className="k">{count((s) => s.sendStatus !== "sent")}</div><div className="v">Needs a resend</div></div>
@@ -64,9 +74,35 @@ export default function PilotAdmin() {
       </div>
 
       {error && <div className="field-error" style={{ marginBottom: 12 }}>{error}</div>}
-      <input className="input" placeholder="Search name, email, phone, reference or company" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 16 }} />
+      <div className="tabs" role="tablist" style={{ marginBottom: 16 }}>
+        <button className="tab" role="tab" aria-selected={tab === "subs"} onClick={() => setTab("subs")}>Submissions ({all.length})</button>
+        <button className="tab" role="tab" aria-selected={tab === "leads"} onClick={() => setTab("leads")}>Leads ({leads.length})</button>
+      </div>
+      <input className="input" placeholder="Search name, email, CHN, phone, reference or company" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 16 }} />
 
-      <div className="two-col">
+      {tab === "leads" && (
+        <div className="card" style={{ overflowX: "auto" }}>
+          {shownLeads.length === 0 ? <p className="tiny">{leads.length ? "No match." : "Nobody has started yet."}</p> : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead><tr style={{ textAlign: "left", color: "var(--ink-3)" }}>
+                {["Name", "Email", "CHN / CSCS", "Last activity", "Email confirmed", "Sent forms"].map((h) => <th key={h} style={{ padding: "6px 10px", fontWeight: 500 }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{shownLeads.map((l) => (
+                <tr key={l.id} style={{ borderTop: "1px solid var(--rule)" }}>
+                  <td style={{ padding: "8px 10px" }}><b>{l.firstName} {l.surname}</b>{l.variants.length > 0 && <div className="tiny">Also: {l.variants.join("; ")}</div>}</td>
+                  <td style={{ padding: "8px 10px" }}>{l.email}</td>
+                  <td style={{ padding: "8px 10px" }}>{l.chn || "Not given"}</td>
+                  <td style={{ padding: "8px 10px" }}>{when(l.updatedAt)}</td>
+                  <td style={{ padding: "8px 10px" }}><span className={`tag ${l.verifiedAt ? "teal" : ""}`}>{l.verifiedAt ? "Yes" : "No"}</span></td>
+                  <td style={{ padding: "8px 10px" }}>{l.submittedRef ? <span className="tag teal">{l.submittedRef}</span> : <span className="tag">Not yet</span>}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {tab === "subs" && <div className="two-col">
         <div className="stack">
           {shown.length === 0 && <div className="card"><p className="tiny">{all.length ? "No match." : "No submissions yet."}</p></div>}
           {shown.map((s) => (
@@ -149,7 +185,7 @@ export default function PilotAdmin() {
             </div>
           )}
         </aside>
-      </div>
+      </div>}
     </>
   );
 }
