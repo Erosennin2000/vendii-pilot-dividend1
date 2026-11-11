@@ -3,6 +3,8 @@ import { createServer, type Server } from "node:http";
 import { beforeEach, describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { PILOT_COMPANIES, companiesFor, payAheadTotal } from "@/lib/pilot/config";
+import { defaultSettings, effectiveSettings, publicConfig } from "@/lib/pilot/settings";
+import { mergeStored, parseSettingsPatch } from "@/lib/pilot/settingsShared";
 import type { MailMessage, Mailer } from "@/lib/pilot/mail";
 import { resetRateLimit, tooMany } from "@/lib/pilot/rateLimit";
 import { DEMO_CODE, leadIdFor, parseStart, startLead, verifyLead } from "@/lib/pilot/leads";
@@ -49,11 +51,12 @@ class FakeMailer implements Mailer {
 beforeEach(() => {
   Object.assign(process.env, { PILOT_MODE: "test", PILOT_TEST_EMAIL: "tester@example.com", PILOT_ADMIN_EMAIL: "admin@example.com", MAIL_FROM: "Vendii <dami@dividendii.com>" });
   resetRateLimit();
+  delete (globalThis as { __pilotSettings?: unknown }).__pilotSettings;
 });
 
 describe("pilot company list", () => {
-  it("covers Coronation and First only, and leaves FBN Holdings out", () => {
-    expect(new Set(PILOT_COMPANIES.map((c) => c.registrarId))).toEqual(new Set(["coronation", "first"]));
+  it("covers all 21 registrars, and leaves FBN Holdings out", () => {
+    expect(new Set(PILOT_COMPANIES.map((c) => c.registrarId)).size).toBe(21);
     expect(companiesFor("coronation").length).toBe(30);
     expect(PILOT_COMPANIES.some((c) => /FBN HOLDINGS/i.test(c.company))).toBe(false);
     expect(payAheadTotal(12)).toBe(2400);
@@ -78,10 +81,11 @@ describe("validation", () => {
     expect(() => parsePilotInput(raw({ atPurchase: { address: "", phone: "", nextOfKinName: "", nextOfKinRelationship: "", nextOfKinPhone: "" } }))).toThrow(/next of kin/);
   });
 
-  it("refuses registrars and companies outside the pilot", () => {
-    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "veritas", company: "Zenith Bank Plc" }] }))).toThrow(/isn't part of the pilot/);
-    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "first", company: "FBN HOLDINGS PLC" }] }))).toThrow(/isn't covered/);
-    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "coronation", company: "Anything I Typed" }] }))).toThrow(/isn't covered/);
+  it("refuses registrars and companies we don't cover", () => {
+    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "acme", company: "Zenith Bank Plc" }] }))).toThrow(/isn't a registrar we cover/);
+    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "veritas", company: "Dangote Cement PLC" }] }))).toThrow(/isn't on that registrar/);
+    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "first", company: "FBN HOLDINGS PLC" }] }))).toThrow(/isn't on that registrar/);
+    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "coronation", company: "Anything I Typed" }] }))).toThrow(/isn't on that registrar/);
   });
 
   it("drops duplicate holdings", () => {
@@ -409,5 +413,79 @@ describe("Supabase store and staff sign-in", () => {
     expect(await code(adminLogin("admin@vendii.com", "wrong"))).toBe(401);
     expect(await code(adminLogin("someone@else.com", "right"))).toBe(403);
     Object.assign(process.env, saved);
+  });
+});
+
+describe("admin settings", () => {
+  it("with nothing saved, behaves like the environment says", () => {
+    const e = effectiveSettings(null);
+    expect(e.mode).toBe("test");
+    expect(e.senderEmail).toBe("dami@dividendii.com");
+    expect(e.senderName).toBe("Vendii");
+    expect(e.testInbox).toBe("tester@example.com");
+    expect(Object.keys(e.registrars).length).toBe(21);
+    expect(e.registrars.veritas).toEqual({ enabled: true, email: "enquiry@veritasregistrars.com" });
+    expect(e.payAheadPerCompany).toBe(200);
+    expect(e.debitRatePercent).toBe(10);
+  });
+
+  it("rejects bad input in plain words and leaves other settings alone", () => {
+    expect(() => parseSettingsPatch({ senderEmail: "not-an-email" })).toThrow(/sending email/);
+    expect(() => parseSettingsPatch({ registrars: { veritas: { email: "nope" } } })).toThrow(/Veritas/);
+    expect(() => parseSettingsPatch({ payment: { accountNumber: "123" } })).toThrow(/10 digits/);
+    expect(() => parseSettingsPatch({ payAheadPerCompany: -5 })).toThrow(/pay-ahead/);
+    expect(() => parseSettingsPatch({ debitRatePercent: 90 })).toThrow(/percentage/);
+    expect(() => parseSettingsPatch({ brandName: "  " })).toThrow(/business name/);
+    const p = parseSettingsPatch({ replyTo: "ops@vendii.ng", registrars: { ghost: { email: "x@y.com" }, veritas: { enabled: false } } });
+    expect(p).toEqual({ replyTo: "ops@vendii.ng", registrars: { veritas: { enabled: false } } });
+    expect(parseSettingsPatch({ senderName: 'Eve" <evil@x.com>\r\nBcc: a@b.com' }).senderName).not.toMatch(/[<>"\r\n]/);
+  });
+
+  it("a saved change is used by the very next submission: sender, brand, registrar address, price, note", async () => {
+    process.env.PILOT_MODE = "test";
+    const store = memoryStore();
+    await store.saveSettings(mergeStored(null, parseSettingsPatch({
+      mode: "live", brandName: "Vendii", senderName: "Vendii Team", senderEmail: "hello@vendii.ng", replyTo: "support@vendii.ng", adminCopy: "boss@vendii.ng",
+      registrarNote: "Please confirm receipt.", payAheadPerCompany: 500,
+      registrars: { centurion: { email: "customercare@centurionregistrars.com" } },
+      payment: { bank: "GTBank", accountName: "Vendii Ltd", accountNumber: "0123456789" },
+    })));
+    const mailer = new FakeMailer();
+    const holdings = [{ registrarId: "centurion", company: companiesFor("centurion")[0].company }, { registrarId: "veritas", company: companiesFor("veritas")[0].company }];
+    const sub = await submitPilot(parsePilotInput(raw({ holdings })), { store, mailer });
+    void leadIdFor;
+    expect(sub.mode).toBe("live");
+    expect(sub.payment).toMatchObject({ amountDue: 1000 });
+    const reg = mailer.sent.filter((m) => m.attachments?.length);
+    expect(reg.map((m) => m.to).sort()).toEqual(["customercare@centurionregistrars.com", "enquiry@veritasregistrars.com"]);
+    for (const m of reg) {
+      expect(m.from).toBe("Vendii Team <hello@vendii.ng>");
+      expect(m.replyTo).toBe("support@vendii.ng");
+      expect(m.bcc).toBe("boss@vendii.ng");
+      expect(m.text).toContain("Vendii is sending this on behalf of");
+      expect(m.text).toContain("Please confirm receipt.");
+      expect(m.text).not.toContain("Dividendi");
+    }
+    const conf = mailer.sent.find((m) => !m.attachments?.length)!;
+    expect(conf.text).toContain("GTBank");
+    expect(conf.text).toContain("₦500");
+  }, 60_000);
+
+  it("switching a registrar off refuses it, and pausing is reported to the form", () => {
+    const e = effectiveSettings({ registrars: { veritas: { enabled: false } }, acceptingSubmissions: false });
+    expect(publicConfig(e).registrars.some((r) => r.id === "veritas")).toBe(false);
+    expect(publicConfig(e).open).toBe(false);
+    expect(() => parsePilotInput(raw({ holdings: [{ registrarId: "veritas", company: companiesFor("veritas")[0].company }] }), { isOpen: (id) => e.registrars[id].enabled }))
+      .toThrow(/isn't taking submissions/);
+  });
+
+  it("renaming the business renames the sender, unless a sender name was set on purpose", () => {
+    expect(effectiveSettings({ brandName: "Vendii" }).senderName).toBe("Vendii");
+    expect(effectiveSettings({ brandName: "Vendii", senderName: "Vendii Team" }).senderName).toBe("Vendii Team");
+  });
+
+  it("the form's own address is used again when an admin clears the box", () => {
+    const e = effectiveSettings({ registrars: { centurion: { email: "" } } });
+    expect(e.registrars.centurion.email).toBe(defaultSettings().registrars.centurion.email);
   });
 });

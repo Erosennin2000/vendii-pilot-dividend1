@@ -42,6 +42,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Pilot settings (sender, registrar addresses, prices). Staff read; only the server writes, after checking the caller is staff.
+    match /pilotSettings/{id} {
+      allow read: if isOps();
+      allow write: if false;
+    }
+
     match /outboundMessages/{id} {
       allow read: if isOps();
       allow write: if false;

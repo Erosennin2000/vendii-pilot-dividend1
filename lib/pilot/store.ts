@@ -1,9 +1,12 @@
 import "server-only";
 import { DATA_SOURCE } from "@/lib/config";
+import type { StoredSettings } from "./settingsShared";
 import type { PilotLead, PilotSubmission } from "./types";
 
 export const PILOT_COLLECTION = "pilotSubmissions";
 export const LEADS_COLLECTION = "pilotLeads";
+export const SETTINGS_COLLECTION = "pilotSettings";
+export const SETTINGS_DOC = "main";
 
 export interface PilotStore {
   /** Writes the record and its files together. The record is saved before any email goes out. */
@@ -18,6 +21,9 @@ export interface PilotStore {
   getLead(id: string): Promise<PilotLead | null>;
   /** Newest activity first. */
   listLeads(limit?: number): Promise<PilotLead[]>;
+  /** What the admin saved on the settings page, or null if nothing yet. */
+  getSettings(): Promise<StoredSettings | null>;
+  saveSettings(s: StoredSettings): Promise<void>;
 }
 
 const plain = <T>(v: T): T => JSON.parse(JSON.stringify(v)); // Firestore rejects undefined fields
@@ -27,6 +33,7 @@ export function memoryStore(): PilotStore {
   const g = globalThis as unknown as { __pilotMem?: { subs: Map<string, PilotSubmission>; files: Map<string, Uint8Array>; leads: Map<string, PilotLead> } };
   const mem = (g.__pilotMem ??= { subs: new Map(), files: new Map(), leads: new Map() });
   mem.leads ??= new Map();
+  const gs = globalThis as unknown as { __pilotSettings?: StoredSettings | null };
   return {
     async save(sub, files) {
       mem.subs.set(sub.id, plain(sub));
@@ -46,6 +53,8 @@ export function memoryStore(): PilotStore {
       if (!f) throw new Error("File not found.");
       return f;
     },
+    async getSettings() { return gs.__pilotSettings ? plain(gs.__pilotSettings) : null; },
+    async saveSettings(st) { gs.__pilotSettings = plain(st); },
     async saveLead(lead) { mem.leads.set(lead.id, plain(lead)); },
     async getLead(id) { const l = mem.leads.get(id); return l ? plain(l) : null; },
     async listLeads(limit = 1000) {
@@ -77,6 +86,11 @@ export async function firebaseStore(): Promise<PilotStore> {
       const [buf] = await adminBucket().file(path).download();
       return new Uint8Array(buf);
     },
+    async getSettings() {
+      const d = await adminDb().collection(SETTINGS_COLLECTION).doc(SETTINGS_DOC).get();
+      return d.exists ? (d.data() as StoredSettings) : null;
+    },
+    async saveSettings(st) { await adminDb().collection(SETTINGS_COLLECTION).doc(SETTINGS_DOC).set(plain(st)); },
     async saveLead(lead) { await adminDb().collection(LEADS_COLLECTION).doc(lead.id).set(plain(lead)); },
     async getLead(id) {
       const d = await adminDb().collection(LEADS_COLLECTION).doc(id).get();
@@ -113,6 +127,14 @@ export async function supabaseStore(): Promise<PilotStore> {
       return (await selectRows<{ data: PilotSubmission }>("pilot_submissions", `select=data&order=created_at.desc&limit=${limit}`)).map((r) => r.data);
     },
     readFile: (path) => downloadObject(path),
+    async getSettings() {
+      // If the settings table hasn't been created yet, behave as "nothing saved" so the pilot keeps running on the environment defaults.
+      try { return (await selectRows<{ data: StoredSettings }>("pilot_settings", "select=data&id=eq.main&limit=1"))[0]?.data ?? null; } catch (e) { console.error("[pilot] settings read failed (has supabase/pilot.sql been run again?)", e); return null; }
+    },
+    async saveSettings(st) {
+      try { await upsertRow("pilot_settings", { id: "main", updated_at: new Date().toISOString(), data: plain(st) }); }
+      catch (e) { throw new Error("Couldn't save settings. In Supabase, open SQL Editor and run supabase/pilot.sql once more to create the settings table. " + (e instanceof Error ? e.message.slice(0, 120) : "")); }
+    },
     async saveLead(lead) { await upsertRow("pilot_leads", leadRow(lead)); },
     async getLead(id) { return (await selectRows<{ data: PilotLead }>("pilot_leads", `select=data&id=eq.${encodeURIComponent(id)}&limit=1`))[0]?.data ?? null; },
     async listLeads(limit = 1000) {

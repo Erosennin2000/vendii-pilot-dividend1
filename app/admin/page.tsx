@@ -148,11 +148,14 @@ export default function PilotAdmin() {
       <div className="page-head">
         <div>
           <h1>Pilot submissions</h1>
-          <p>Everyone who has started or finished the Coronation and First pilot. Leads are people who began step 1, finished or not. Open a submission to preview the PDFs that went to each registrar, send or chase, or mark a payment as received. The list refreshes by itself.</p>
+          <p>Everyone who has started or finished the pilot. Leads are people who began step 1, finished or not. Open a submission to preview the PDFs that went to each registrar, send or chase, or mark a payment as received. The list refreshes by itself.</p>
         </div>
+        <div className="row" style={{ gap: 8 }}>
+        <a className="btn ghost sm" href="/admin/settings">Settings</a>
         <button className="btn ghost sm" onClick={() => tab === "leads"
           ? saveBlob(new Blob([leadsCsv(shownLeads)], { type: "text/csv" }), "vendii-pilot-leads.csv")
           : saveBlob(new Blob([submissionsCsv(shown)], { type: "text/csv" }), "vendii-pilot-submissions.csv")}>Export CSV</button>
+        </div>
       </div>
 
       <div className="stats" style={{ marginBottom: 20 }}>

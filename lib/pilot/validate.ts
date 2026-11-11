@@ -46,7 +46,8 @@ export function pilotProblems(i: PilotInput): string[] {
 }
 
 /** Server side: take untrusted JSON, return a clean PilotInput or throw with every problem listed. */
-export function parsePilotInput(raw: unknown): PilotInput {
+/** `isOpen` lets the caller refuse registrars an admin has switched off. Left out, every registrar is accepted. */
+export function parsePilotInput(raw: unknown, opts: { isOpen?: (registrarId: string) => boolean } = {}): PilotInput {
   const b = (raw ?? {}) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   const rp = (b.profile ?? {}) as Record<string, unknown>;
   const profile = Object.fromEntries(PROFILE_KEYS.map((k) => [k, clean(rp[k], k === "address" || k === "previousAddress" ? 300 : 120)])) as unknown as FormProfile;
@@ -75,10 +76,11 @@ export function parsePilotInput(raw: unknown): PilotInput {
   for (const h of Array.isArray(b.holdings) ? b.holdings.slice(0, MAX_COMPANIES + 1) : []) {
     const registrarId = String(h?.registrarId ?? "");
     const company = String(h?.company ?? "");
-    if (!pilotRegistrar(registrarId)) { problems.push(`${registrarId || "That registrar"} isn't part of the pilot.`); continue; }
+    if (!pilotRegistrar(registrarId)) { problems.push(`${registrarId || "That registrar"} isn't a registrar we cover.`); continue; }
+    if (opts.isOpen && !opts.isOpen(registrarId)) { problems.push(`${pilotRegistrar(registrarId)!.name} isn't taking submissions right now.`); continue; }
     // Only names printed on the form's own list are accepted, so nothing arbitrary reaches a registrar.
     const listed = PILOT_COMPANIES.find((c) => c.registrarId === registrarId && c.company === company);
-    if (!listed) { problems.push(`${company.slice(0, 80) || "That company"} isn't covered in the pilot.`); continue; }
+    if (!listed) { problems.push(`${company.slice(0, 80) || "That company"} isn't on that registrar's form.`); continue; }
     if (!holdings.some((x) => x.registrarId === registrarId && x.company === company)) holdings.push({ registrarId: registrarId as PilotRegistrarId, company });
   }
 

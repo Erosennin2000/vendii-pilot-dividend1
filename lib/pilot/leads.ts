@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomInt } from "node:crypto";
 import { isEmail } from "@/lib/domain/validation";
-import { PILOT_BRAND } from "./config";
+import { effectiveSettings } from "./settings";
 import { pilotEnv, type Mailer } from "./mail";
 import type { PilotStore } from "./store";
 import { clean } from "./text";
@@ -54,7 +54,9 @@ export async function startLead(input: StartInput, deps: { store: PilotStore; ma
   };
   await deps.store.saveLead(lead);
   if (otpMode() === "email") {
-    const env = pilotEnv();
+    const settings = effectiveSettings(await deps.store.getSettings());
+    const env = pilotEnv(settings);
+    const PILOT_BRAND = settings.brandName;
     await deps.mailer.send({
       from: env.from, to: input.email, replyTo: env.replyTo || undefined,
       subject: `Your ${PILOT_BRAND} code: ${code}`,

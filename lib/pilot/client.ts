@@ -1,5 +1,6 @@
 import { auth } from "@/lib/auth";
 import { saveBlob } from "@/lib/forms/client";
+import type { PilotSettings } from "./settingsShared";
 import type { PilotLeadView, PilotSubmission } from "./types";
 
 const KEY = "vendii-admin-token";
@@ -74,4 +75,22 @@ export function leadsCsv(list: PilotLeadView[]): string {
   const head = ["Email", "First name", "Surname", "Other names", "Other spellings", "CHN or CSCS", "Started", "Last activity", "Email confirmed", "Sent forms (reference)"];
   const rows = list.map((l) => [l.email, l.firstName, l.surname, l.otherNames, l.variants.join("; "), l.chn, l.createdAt, l.updatedAt, l.verifiedAt ?? "", l.submittedRef ?? ""]);
   return [head, ...rows].map((r) => r.map(q).join(",")).join("\n");
+}
+
+export interface SettingsView {
+  settings: PilotSettings;
+  smtp: { configured: boolean; host: string; user: string; hasPassword: boolean };
+  registrars: { id: string; name: string; formEmail: string; companies: number }[];
+}
+
+export async function getSettings(): Promise<SettingsView> {
+  return (await (await authed("/api/pilot/settings")).json()) as SettingsView;
+}
+
+export async function saveSettings(patch: unknown): Promise<SettingsView> {
+  return (await (await authed("/api/pilot/settings", { method: "PUT", body: JSON.stringify(patch) })).json()) as SettingsView;
+}
+
+export async function sendTestEmail(to: string): Promise<{ from: string; to: string }> {
+  return (await (await authed("/api/pilot/settings/test-email", { method: "POST", body: JSON.stringify({ to }) })).json()) as { from: string; to: string };
 }

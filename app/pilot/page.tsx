@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CompanyPicker } from "@/components/CompanyPicker";
 import { Check, SelectField, TextField } from "@/components/Field";
 import { FileDrop } from "@/components/FileDrop";
@@ -11,7 +11,7 @@ import { naira } from "@/lib/domain/fees";
 import { emptyProfile } from "@/lib/forms/registry";
 import type { FormProfile } from "@/lib/forms/types";
 import { resizeImage } from "@/lib/image";
-import { PAY_AHEAD_PER_COMPANY, PILOT_REGISTRARS, companiesFor, payAheadTotal, type PilotRegistrarId } from "@/lib/pilot/config";
+import { DEBIT_RATE, PAY_AHEAD_PER_COMPANY, PILOT_REGISTRARS, companiesFor, type PilotRegistrarId } from "@/lib/pilot/config";
 import type { PaymentMethod, PilotInput } from "@/lib/pilot/types";
 import { pilotProblemsByStep, type PilotStep } from "@/lib/pilot/validate";
 import { errorMessage } from "@/lib/util";
@@ -32,7 +32,15 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return data as T;
 }
 
+interface PublicCfg { open: boolean; mode: "test" | "live"; registrars: { id: string; name: string }[]; payAheadPerCompany: number; debitRatePercent: number }
+/** Used until the server answers, and if it can't: every registrar on, the standard prices. */
+const DEFAULT_CFG: PublicCfg = { open: true, mode: "test", registrars: PILOT_REGISTRARS.map((r) => ({ id: r.id, name: r.name })), payAheadPerCompany: PAY_AHEAD_PER_COMPANY, debitRatePercent: DEBIT_RATE * 100 };
+
 export default function PilotPage() {
+  const [cfg, setCfg] = useState<PublicCfg>(DEFAULT_CFG);
+  useEffect(() => { fetch("/api/pilot/config", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((c) => { if (c) setCfg(c as PublicCfg); }).catch(() => { /* keep the defaults */ }); }, []);
+  const rate = cfg.debitRatePercent;
+  const perCompany = cfg.payAheadPerCompany;
   const [step, setStep] = useState<PilotStep>(1);
   // Step 1
   const [profile, setProfile] = useState<FormProfile>(emptyProfile());
@@ -58,13 +66,13 @@ export default function PilotPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
 
-  const regId = PILOT_REGISTRARS.find((r) => r.name === regName)?.id ?? "";
+  const regId = cfg.registrars.find((r) => r.name === regName)?.id ?? "";
   const options = useMemo(
     () => companiesFor(regId).map((c) => c.company).filter((c) => !held.some((h) => h.registrarId === regId && h.company === c)),
     [regId, held],
   );
   const byRegistrar = PILOT_REGISTRARS.map((r) => ({ r, items: held.filter((h) => h.registrarId === r.id) })).filter((g) => g.items.length);
-  const total = payAheadTotal(held.length);
+  const total = Math.max(0, held.length) * perCompany;
 
   const input: PilotInput = { profile, atPurchase: at, variants, holdings: held, photo, signature, payment: { method, acknowledged: payAck }, consent };
   const problems = pilotProblemsByStep(input);
@@ -119,7 +127,8 @@ export default function PilotPage() {
     } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
   }
 
-  if (result) return <Done r={result} email={profile.email} first={profile.firstName} />;
+  if (result) return <Done r={result} email={profile.email} first={profile.firstName} rate={rate} />;
+  if (!cfg.open) return <div className="card" style={{ maxWidth: 560, margin: "48px auto" }}><h1 style={{ fontSize: 28 }}>We&apos;ve paused new submissions</h1><p className="lede">We aren&apos;t taking new forms for a short while. Please check back soon.</p></div>;
 
   const waitingForCode = step === 1 && lead && !token;
 
@@ -200,8 +209,8 @@ export default function PilotPage() {
       {step === 2 && (
         <section className="card">
           <h1>Where do you hold shares?</h1>
-          <p className="lede">The pilot covers Coronation Registrars and First Registrars. Pick a registrar, tick every company you hold, then press Add. You can do it for the other registrar afterwards.</p>
-          <SelectField label="Registrar" value={regName} onChange={(v) => { setRegName(v); }} options={PILOT_REGISTRARS.map((r) => r.name)} placeholder="Choose a registrar" />
+          <p className="lede">Pick a registrar, tick every company you hold there, then press Add. Then do the same for any other registrar you have shares with.</p>
+          <SelectField label="Registrar" value={regName} onChange={(v) => { setRegName(v); }} options={cfg.registrars.map((r) => r.name)} placeholder="Choose a registrar" />
           <CompanyPicker key={regId} options={options} disabled={!regId} placeholder={regId ? "Tick your companies" : "Choose a registrar first"} onAdd={addCompanies} />
 
           {byRegistrar.length > 0 && (
@@ -219,7 +228,7 @@ export default function PilotPage() {
               ))}
             </div>
           )}
-          <p className="tiny" style={{ marginTop: 16 }}>Not covered yet: companies on other registrars, and FBN Holdings (First Registrars&apos; form doesn&apos;t list it).</p>
+          <p className="tiny" style={{ marginTop: 16 }}>Not covered: companies whose registrar isn&apos;t in the list, and FBN Holdings (First Registrars&apos; form doesn&apos;t list it).</p>
           <Nav back={() => go(1)} next={() => go(3)} problems={problems[2]} />
         </section>
       )}
@@ -288,18 +297,18 @@ export default function PilotPage() {
             <p className="tiny">Choose one. Either way, the registrar pays any dividend straight into your own account. Vendii never holds your money.</p>
             <div className="stack" role="radiogroup" aria-label="Payment">
               <button type="button" role="radio" aria-checked={method === "debit_after"} className="pchoice" onClick={() => { setMethod("debit_after"); setPayAck(false); }}>
-                <div className="row-between"><b>Pay when you&apos;re paid</b><span className="tag gold">10% of what you receive</span></div>
-                <div className="tiny" style={{ marginTop: 6 }}>Nothing now. When a registrar pays you, our fee is 10% of that payment, taken by direct debit. We tell you the exact amount first. If nothing arrives, you owe nothing.</div>
+                <div className="row-between"><b>Pay when you&apos;re paid</b><span className="tag gold">{rate}% of what you receive</span></div>
+                <div className="tiny" style={{ marginTop: 6 }}>Nothing now. When a registrar pays you, our fee is {rate}% of that payment, taken by direct debit. We tell you the exact amount first. If nothing arrives, you owe nothing.</div>
               </button>
               <button type="button" role="radio" aria-checked={method === "pay_ahead"} className="pchoice" onClick={() => { setMethod("pay_ahead"); setPayAck(false); }}>
                 <div className="row-between"><b>Pay now</b><span className="tag gold">{naira(total)} for {held.length} {held.length === 1 ? "company" : "companies"}</span></div>
-                <div className="tiny" style={{ marginTop: 6 }}>A flat {naira(PAY_AHEAD_PER_COMPANY)} for each company, by bank transfer after you send. Nothing is taken from your dividends.</div>
+                <div className="tiny" style={{ marginTop: 6 }}>A flat {naira(perCompany)} for each company, by bank transfer after you send. Nothing is taken from your dividends.</div>
               </button>
             </div>
             <div style={{ marginTop: 12 }}>
               <Check checked={payAck} onToggle={() => setPayAck((v) => !v)}>
                 {method === "debit_after"
-                  ? <><b>I agree to a variable direct debit.</b> Each debit is 10% of one payment I&apos;ve received, never more, and I&apos;ll be told the exact amount before it&apos;s taken.</>
+                  ? <><b>I agree to a variable direct debit.</b> Each debit is {rate}% of one payment I&apos;ve received, never more, and I&apos;ll be told the exact amount before it&apos;s taken.</>
                   : <><b>I&apos;ll pay {naira(total)} by bank transfer</b>, using my reference.</>}
               </Check>
             </div>
@@ -312,7 +321,7 @@ export default function PilotPage() {
             </Check>
             <div className="psum" style={{ marginTop: 16 }}>
               <span>{held.length} {held.length === 1 ? "company" : "companies"} with {byRegistrar.map((g) => g.r.name).join(" and ")}</span>
-              <b>{method === "pay_ahead" ? naira(total) : "10% after you're paid"}</b>
+              <b>{method === "pay_ahead" ? naira(total) : `${rate}% after you're paid`}</b>
             </div>
             <div className="pnav" style={{ marginTop: 0 }}>
               <button className="btn ghost" onClick={() => go(3)}>Back</button>
@@ -338,7 +347,7 @@ function Nav({ back, next, problems }: { back: () => void; next: () => void; pro
   );
 }
 
-function Done({ r, email, first }: { r: Result; email: string; first: string }) {
+function Done({ r, email, first, rate }: { r: Result; email: string; first: string; rate: number }) {
   const ok = r.sendStatus === "sent";
   const pending = r.sendStatus === "queued" || r.sendStatus === "sending";
   return (
@@ -356,7 +365,7 @@ function Done({ r, email, first }: { r: Result; email: string; first: string }) 
           <div className="row"><span className="k">Companies</span><span className="v">{r.companyCount}</span></div>
           {r.payment.method === "pay_ahead"
             ? <div className="row"><span className="k">To pay by bank transfer</span><span className="v">{naira(r.payment.amountDue)}</span></div>
-            : <div className="row"><span className="k">Our fee</span><span className="v">10%, after you&apos;re paid</span></div>}
+            : <div className="row"><span className="k">Our fee</span><span className="v">{rate}%, after you&apos;re paid</span></div>}
         </div>
         <h2>What happens next</h2>
         <ol className="pdone-steps">

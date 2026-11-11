@@ -1,4 +1,4 @@
-# Pilot: Coronation and First registrars
+# Pilot: all 21 registrars
 
 The Vendii pilot. `/` is the pilot home page and **`/pilot`** is the four-step form (no account to create). The old claim screens
 (`/claim`, `/dashboard`, `/forms`, `/sign-in`) still exist but nothing links to them; only a small "Staff sign-in" link remains for you.
@@ -6,7 +6,7 @@ The Vendii pilot. `/` is the pilot home page and **`/pilot`** is the four-step f
 | Step | What the person does | What we keep |
 | --- | --- | --- |
 | 1. You | Name, other spellings, email, CHN/CSCS. Presses Continue, then enters the **email code** (demo code **123456**). | A **lead** is saved the moment they continue, even if they never finish. |
-| 2. Your companies | Registrar dropdown, then a **tick-box list** of companies (search, Tick all) and **Add N companies** in one go. Coronation and First only. | |
+| 2. Your companies | Registrar dropdown, then a **tick-box list** of companies (search, Tick all) and **Add N companies** in one go. Any of the 21 registrars we have a form for. | |
 | 3. Your details | BVN, **bank (dropdown of Nigerian banks, fintechs and microfinance banks)**, **account number (exactly 10 digits)**, address, mobile; address, phone and next of kin **at the time of purchase**. | |
 | 4. Sign and send | Photo, signature, payment choice (10% after, or pay now at ₦200 a company), consent tick. | The full **submission**, with both PDFs per registrar. |
 
@@ -75,3 +75,23 @@ Where the records go is chosen by `PILOT_STORE`: `supabase`, `firebase` or `memo
 ## Tests
 
 `npm test` includes `tests/pilot.test.ts` (validation, both modes, both PDFs attached, instant create then send, chase, failed-send and resend, Yoruba names, bank list and 10-digit rule, rate limit, the Supabase store and staff sign-in against a fake Supabase).
+
+
+## All 21 registrars and the Settings page
+
+The pilot now covers every registrar that has a form in `lib/forms/` (21, 439 companies). Their emails are in `lib/pilot/config.ts`
+(the address printed on each registrar's own form). Staff can change them without a developer on **`/admin/settings`**
+(the "Settings" button on the staff page):
+
+- **Live / Test** switch (with a confirmation tick before going live) and an **open / paused** switch for the public form.
+- **Sending email and name**, reply-to, "copy me" address (blind copy on every live registrar email), test inbox, and an optional extra line for every registrar email, plus **Send test email**.
+- **Per registrar:** switch on/off and change the email address. Blank = the address on the registrar's own form.
+- **Prices:** pay-ahead per company, direct-debit percentage, and the bank account shown to people who pay ahead.
+
+Saved settings are stored next to the submissions (Supabase table `pilot_settings`, or Firebase `pilotSettings/main`). **Run `supabase/pilot.sql`
+in Supabase once more** to create the table. Until you do, the pilot keeps working on the environment values and saving settings
+shows an error that says so. The mail *password* stays in the environment (`SMTP_PASS`); it is never shown or stored by the page.
+`PILOT_EMAIL_OVERRIDES` (JSON, e.g. `{"centurion":"customercare@centurionregistrars.com"}`) still works as a server-side default.
+
+Check before going live: Centurion's form prints "cusomercare@" (looks like a typo), EDC's form gives a complaints mailbox, Mainstreet's is a Yahoo address,
+Africa Prudential's form has one BVN box fewer than a BVN has digits, and Cordros' address line is short (the email body has the full address).

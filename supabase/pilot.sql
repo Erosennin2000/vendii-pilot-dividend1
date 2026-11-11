@@ -22,7 +22,14 @@ create table if not exists public.pilot_leads (
 );
 create index if not exists pilot_leads_updated_idx on public.pilot_leads (updated_at desc);
 
--- Lock both tables. With row level security on and no policies, the public (anon) key can read and write nothing.
+create table if not exists public.pilot_settings (
+  id          text primary key,          -- always 'main'
+  updated_at  timestamptz not null,
+  data        jsonb not null             -- what the admin saved on the settings page
+);
+alter table public.pilot_settings enable row level security;
+
+-- Lock the tables. With row level security on and no policies, the public (anon) key can read and write nothing.
 -- Only the server, using the service-role key, can touch them.
 alter table public.pilot_submissions enable row level security;
 alter table public.pilot_leads       enable row level security;

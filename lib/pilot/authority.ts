@@ -16,6 +16,8 @@ export interface AuthorityInput {
   signature: Uint8Array | null;
   /** Where the registrar should reply. */
   replyTo: string;
+  /** The business name on the letter. Defaults to PILOT_BRAND. */
+  brand?: string;
   now?: Date;
 }
 
@@ -45,9 +47,10 @@ const lagosDate = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", m
  * for, on which holdings, and what Vendii may not do. The shareholder's drawn signature is on it.
  */
 export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Array> {
+  const brand = pdfSafe(a.brand || PILOT_BRAND);
   const doc = await PDFDocument.create();
   doc.setTitle(`Letter of authority - ${a.ref}`);
-  doc.setCreator(PILOT_BRAND);
+  doc.setCreator(brand);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const s = pdfSafe;
@@ -71,7 +74,7 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   };
   const heading = (t: string) => { room(30); y -= 6; text(t, { font: bold, size: 11, color: NAVY, gap: 2 }); };
 
-  page.drawText(PILOT_BRAND.toUpperCase(), { x: M, y, size: 11, font: bold, color: NAVY });
+  page.drawText(brand.toUpperCase(), { x: M, y, size: 11, font: bold, color: NAVY });
   y -= 24;
   text("LETTER OF AUTHORITY", { font: bold, size: 16, gap: 0 });
   text("My signed permission for Vendii to submit my e-dividend mandate", { size: 11, color: MUTED, gap: 14 });
@@ -79,9 +82,9 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   text(`Date: ${lagosDate(a.now ?? new Date())}  |  Reference: ${a.ref}`, { gap: 8 });
   text(`To: The Registrar, ${a.registrar}`, { gap: 8 });
 
-  text(`Re: Authority for ${PILOT_BRAND} to submit the e-dividend mandate of ${full}`, { font: bold, gap: 10 });
+  text(`Re: Authority for ${brand} to submit the e-dividend mandate of ${full}`, { font: bold, gap: 10 });
 
-  text(`I, ${full}, appoint ${PILOT_BRAND} ("the Attorney") to act for me for the limited purposes below.`, { gap: 8 });
+  text(`I, ${full}, appoint ${brand} ("the Attorney") to act for me for the limited purposes below.`, { gap: 8 });
 
   heading(`1. Holdings covered (${a.companies.length} ${a.companies.length === 1 ? "company" : "companies"})`);
   text(`This authority covers my holdings in the following ${a.companies.length === 1 ? "company" : "companies"} on your register, and nothing else:`, { gap: 2 });
@@ -138,7 +141,7 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   text(full, { font: bold, gap: 0 });
   text(`Signed electronically by the shareholder on ${lagosDate(a.now ?? new Date())}`, { size: 9, color: MUTED, gap: 14 });
 
-  text(`Sent on the shareholder's behalf by ${PILOT_BRAND}. Please reply to ${a.replyTo || "the sender"} quoting ${a.ref}.`, { size: 9, color: MUTED });
+  text(`Sent on the shareholder's behalf by ${brand}. Please reply to ${a.replyTo || "the sender"} quoting ${a.ref}.`, { size: 9, color: MUTED });
 
   return doc.save();
 }

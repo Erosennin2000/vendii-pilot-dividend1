@@ -13,7 +13,7 @@ export function defaultSettings(env: NodeJS.ProcessEnv = process.env): PilotSett
     mode: env.PILOT_MODE === "live" ? "live" : "test", // anything else is test: nothing reaches a registrar by accident
     acceptingSubmissions: true,
     senderName: m ? (m[1] ?? "").trim() || PILOT_BRAND : PILOT_BRAND,
-    senderEmail: m ? m[2].trim() : isEmail(bare) ? bare : "dummy@dividendi.com",
+    senderEmail: m ? m[2].trim() : isEmail(bare) ? bare : "dami@dividendii.com",
     replyTo: (env.PILOT_REPLY_TO ?? admin).trim(),
     adminCopy: admin,
     testInbox: (env.PILOT_TEST_EMAIL ?? admin).trim(),

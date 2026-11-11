@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMailer } from "@/lib/pilot/mail";
+import { effectiveSettings } from "@/lib/pilot/settings";
 import { tooMany } from "@/lib/pilot/rateLimit";
 import { getPilotStore } from "@/lib/pilot/store";
 import { createPilot } from "@/lib/pilot/submit";
@@ -26,8 +27,11 @@ export async function POST(req: Request) {
     // Step 1's email check must have passed. The token says which lead, and the email on the forms is theirs.
     const who = verifyToken(raw?.token);
     if (!who) return NextResponse.json({ error: "Please confirm your email again to continue." }, { status: 401 });
-    const input = parsePilotInput({ ...raw, profile: { ...(raw?.profile ?? {}), email: who.email } });
-    const sub = await createPilot(input, { store: await getPilotStore(), mailer: getMailer(), leadId: who.leadId });
+    const store = await getPilotStore();
+    const settings = effectiveSettings(await store.getSettings());
+    if (!settings.acceptingSubmissions) return NextResponse.json({ error: "We've paused new submissions for a moment. Please try again later." }, { status: 503 });
+    const input = parsePilotInput({ ...raw, profile: { ...(raw?.profile ?? {}), email: who.email } }, { isOpen: (id) => settings.registrars[id]?.enabled === true });
+    const sub = await createPilot(input, { store, mailer: getMailer(), leadId: who.leadId, settings });
     return NextResponse.json({
       id: sub.id,
       ref: sub.ref,
