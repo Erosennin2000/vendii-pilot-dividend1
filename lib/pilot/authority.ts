@@ -11,12 +11,11 @@ export interface AuthorityInput {
   ref: string;
   profile: FormProfile;
   atPurchase: PilotInput["atPurchase"];
+  variants?: string[];
   companies: string[];
   signature: Uint8Array | null;
   /** Where the registrar should reply. */
   replyTo: string;
-  /** The business name on the letter. Defaults to PILOT_BRAND. */
-  brand?: string;
   now?: Date;
 }
 
@@ -42,14 +41,13 @@ function wrap(font: PDFFont, text: string, size: number, width: number): string[
 const lagosDate = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Lagos" });
 
 /**
- * A one-or-two page letter that sits next to the mandate form. It tells the registrar who Dividendi is acting
- * for, on which holdings, and what Dividendi may not do. The shareholder's drawn signature is on it.
+ * A one-or-two page letter that sits next to the mandate form. It tells the registrar who Vendii is acting
+ * for, on which holdings, and what Vendii may not do. The shareholder's drawn signature is on it.
  */
 export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Array> {
-  const brand = pdfSafe(a.brand || PILOT_BRAND);
   const doc = await PDFDocument.create();
   doc.setTitle(`Letter of authority - ${a.ref}`);
-  doc.setCreator(brand);
+  doc.setCreator(PILOT_BRAND);
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const s = pdfSafe;
@@ -73,22 +71,24 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   };
   const heading = (t: string) => { room(30); y -= 6; text(t, { font: bold, size: 11, color: NAVY, gap: 2 }); };
 
-  page.drawText(brand.toUpperCase(), { x: M, y, size: 11, font: bold, color: NAVY });
+  page.drawText(PILOT_BRAND.toUpperCase(), { x: M, y, size: 11, font: bold, color: NAVY });
   y -= 24;
   text("LETTER OF AUTHORITY", { font: bold, size: 16, gap: 0 });
-  text("Limited power of attorney for an e-dividend mandate", { size: 11, color: MUTED, gap: 14 });
+  text("My signed permission for Vendii to submit my e-dividend mandate", { size: 11, color: MUTED, gap: 14 });
 
   text(`Date: ${lagosDate(a.now ?? new Date())}  |  Reference: ${a.ref}`, { gap: 8 });
   text(`To: The Registrar, ${a.registrar}`, { gap: 8 });
 
-  text(`Re: Authority for ${brand} to submit the e-dividend mandate of ${full}`, { font: bold, gap: 10 });
+  text(`Re: Authority for ${PILOT_BRAND} to submit the e-dividend mandate of ${full}`, { font: bold, gap: 10 });
 
-  text(`I, ${full}, appoint ${brand} ("the Attorney") to act for me for the limited purposes below.`, { gap: 8 });
+  text(`I, ${full}, appoint ${PILOT_BRAND} ("the Attorney") to act for me for the limited purposes below.`, { gap: 8 });
 
-  heading("1. Holdings covered");
+  heading(`1. Holdings covered (${a.companies.length} ${a.companies.length === 1 ? "company" : "companies"})`);
   text(`This authority covers my holdings in the following ${a.companies.length === 1 ? "company" : "companies"} on your register, and nothing else:`, { gap: 2 });
   a.companies.forEach((c, i) => text(`${i + 1}. ${c}`, { indent: 12, gap: 0 }));
   y -= 6;
+
+  if (a.variants?.length) text(`My name may appear on your register as: ${a.variants.join("; ")}.`, { gap: 2 });
 
   heading("2. What the Attorney may do");
   text("Complete and submit my e-dividend mandate form for these holdings, send you the supporting documents I have supplied, correspond with you about them, and ask you for the status of any unclaimed dividends held for me.");
@@ -138,7 +138,7 @@ export async function buildAuthorityLetter(a: AuthorityInput): Promise<Uint8Arra
   text(full, { font: bold, gap: 0 });
   text(`Signed electronically by the shareholder on ${lagosDate(a.now ?? new Date())}`, { size: 9, color: MUTED, gap: 14 });
 
-  text(`Sent on the shareholder's behalf by ${brand}. Please reply to ${a.replyTo || "the sender"} quoting ${a.ref}.`, { size: 9, color: MUTED });
+  text(`Sent on the shareholder's behalf by ${PILOT_BRAND}. Please reply to ${a.replyTo || "the sender"} quoting ${a.ref}.`, { size: 9, color: MUTED });
 
   return doc.save();
 }

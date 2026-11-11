@@ -1,6 +1,6 @@
-# Dividendi
+# Vendii
 
-Recovers unclaimed dividends for Nigerian shareholders and estates. The shareholder gives us every spelling of their name, we search the registers, they sign a limited power of attorney and a NIBSS fee mandate, a person here reviews the pack, we file and chase, and the registrar pays the shareholder directly. We debit 10% of what arrived. Dividendi never holds client money.
+Recovers unclaimed dividends for Nigerian shareholders and estates. The shareholder gives us every spelling of their name, we search the registers, they sign a limited power of attorney and a NIBSS fee mandate, a person here reviews the pack, we file and chase, and the registrar pays the shareholder directly. We debit 10% of what arrived. Vendii never holds client money.
 
 **Language and stack.** TypeScript throughout. Next.js 14 (App Router) with React 18 for the pages, Next.js route handlers for the server, and Firebase for sign-in (Auth), data (Firestore) and uploads (Storage). It deploys to Vercel as-is. Font is Space Grotesk; brand colours navy `#295D8F` and gold `#C59F56`.
 
@@ -53,7 +53,7 @@ tests/                  Vitest
 
 Pages only ever call `repo.*` and `auth.*`. Nothing else in the UI knows which backend it's on.
 
-**Pilot.** A public Coronation and First Registrars flow that fills the forms and emails them for the shareholder lives at `/pilot`, with a staff view at `/ops/pilot`. See [PILOT.md](PILOT.md).
+**Pilot.** A public Coronation and First Registrars flow that fills the forms and emails them for the shareholder lives at `/pilot`, with a staff view at `/admin`. Setup: [SETUP.md](SETUP.md). How it works: [PILOT.md](PILOT.md).
 
 ## Rules the code enforces
 
@@ -78,7 +78,7 @@ draft ─▶ review ─▶ submitted ─▶ chasing ─▶ collected ─▶ paid
 
 ## Registrar forms
 
-Every registrar has its own e-dividend mandate form. Dividendi fills them from one set of details: the shareholder's name, BVN, bank, address, contact details, passport photo and signature go onto the right boxes of each registrar's form, and the companies they hold are ticked. Several companies on one registrar share one form.
+Every registrar has its own e-dividend mandate form. Vendii fills them from one set of details: the shareholder's name, BVN, bank, address, contact details, passport photo and signature go onto the right boxes of each registrar's form, and the companies they hold are ticked. Several companies on one registrar share one form.
 
 Two ways in:
 
@@ -146,7 +146,7 @@ To show the demo without any backend, deploy with `NEXT_PUBLIC_DATA_SOURCE=mock`
 
 1. **Put the code on GitHub.**
    ```bash
-   git init && git add . && git commit -m "Dividendi"
+   git init && git add . && git commit -m "Vendii"
    git branch -M main
    git remote add origin https://github.com/<you>/dividendi.git
    git push -u origin main
